@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "436363627484",
+    "project_id": "benchmark-14acf",
+    "storage_bucket": "benchmark-14acf.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:436363627484:android:08498a89d5e2cead029d19",
+        "android_client_info": {
+          "package_name": "com.example.benchmark"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDlYJISpxKZLrWT09MQEt5gZNPb2EpCXWE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
