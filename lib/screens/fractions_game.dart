@@ -1237,66 +1237,94 @@ class _FractionsGameState extends State<FractionsGame> {
   }
 
   Widget _buildGameUI() {
-    return Column(
-      children: [
-        Row(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final screen = MediaQuery.sizeOf(context);
+        final availableHeight = constraints.maxHeight.isFinite
+            ? constraints.maxHeight
+            : screen.height;
+        final availableWidth = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : screen.width;
+        final isVeryShort = availableHeight < 680;
+        final padHeight = (availableHeight * (isVeryShort ? 0.34 : 0.40))
+            .clamp(220.0, 340.0)
+            .toDouble();
+
+        return ListView(
+          padding: EdgeInsets.zero,
+          physics: const BouncingScrollPhysics(),
           children: [
-            Expanded(child: _statPill('Score', '$score', Icons.stars_rounded)),
-            const SizedBox(width: 10),
-            Expanded(child: _statPill('Level', '$level', Icons.trending_up_rounded)),
-            const SizedBox(width: 10),
-            Expanded(child: _statPill('Mode', _questionTypeLabel(), Icons.pie_chart_rounded)),
-          ],
-        ),
-        const SizedBox(height: 8),
-        _card(
-          padding: const EdgeInsets.all(10),
-          child: GameTimer(
-            key: timerKey,
-            seconds: timeLimit,
-            isPaused: () => isGameOver,
-            onTimeUp: _handleTimeout,
-            showBar: true,
-          ),
-        ),
-        const SizedBox(height: 8),
-        HeartsDisplay(hearts: hearts),
-        const SizedBox(height: 8),
-        _card(
-          padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
-          child: Column(
-            children: [
-              Text(
-                currentQuestion.instruction,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w800,
-                  color: _inkColor,
-                ),
+            Row(
+              children: [
+                Expanded(child: _statPill('Score', '$score', Icons.stars_rounded)),
+                const SizedBox(width: 8),
+                Expanded(child: _statPill('Level', '$level', Icons.trending_up_rounded)),
+                const SizedBox(width: 8),
+                Expanded(child: _statPill('Mode', _questionTypeLabel(), Icons.pie_chart_rounded)),
+              ],
+            ),
+            const SizedBox(height: 8),
+            _card(
+              padding: const EdgeInsets.all(10),
+              child: GameTimer(
+                key: timerKey,
+                seconds: timeLimit,
+                isPaused: () => isGameOver,
+                onTimeUp: _handleTimeout,
+                showBar: true,
               ),
-              const SizedBox(height: 12),
-              FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Text(
-                  currentQuestion.expression,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 32,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 0.3,
-                    color: _inkColor,
+            ),
+            const SizedBox(height: 8),
+            HeartsDisplay(hearts: hearts),
+            const SizedBox(height: 8),
+            _card(
+              padding: EdgeInsets.fromLTRB(
+                availableWidth < 380 ? 12 : 18,
+                availableHeight < 680 ? 12 : 16,
+                availableWidth < 380 ? 12 : 18,
+                availableHeight < 680 ? 12 : 18,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    currentQuestion.instruction,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: availableWidth < 380 ? 15 : 17,
+                      fontWeight: FontWeight.w800,
+                      color: _inkColor,
+                    ),
                   ),
-                ),
+                  const SizedBox(height: 8),
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      currentQuestion.expression,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: availableWidth < 380 ? 27 : 32,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0.3,
+                        color: _inkColor,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  _answerBox(),
+                ],
               ),
-              const SizedBox(height: 14),
-              _answerBox(),
-            ],
-          ),
-        ),
-        const SizedBox(height: 8),
-        Expanded(child: _buildFractionPad()),
-      ],
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              height: padHeight,
+              child: _buildFractionPad(),
+            ),
+            const SizedBox(height: 14),
+          ],
+        );
+      },
     );
   }
 
@@ -1458,8 +1486,8 @@ class _FractionsGameState extends State<FractionsGame> {
         final panelWidth = min(availableWidth * 0.98, 720.0)
             .clamp(300.0, 720.0)
             .toDouble();
-        final panelHeight = (availableHeight * 0.96)
-            .clamp(210.0, 390.0)
+        final targetHeight = min(availableHeight * 0.98, 340.0);
+        final panelHeight = min(max(220.0, targetHeight), availableHeight)
             .toDouble();
 
         return Align(
@@ -1500,9 +1528,13 @@ class _FractionAnswerPad extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final spacing = (panelWidth * 0.014).clamp(4.0, 8.0).toDouble();
-    final padding = (panelWidth * 0.024).clamp(8.0, 14.0).toDouble();
-    final rows = [
+    final width = panelWidth.clamp(280.0, 760.0).toDouble();
+    final height = panelHeight.clamp(220.0, 360.0).toDouble();
+    final padding = (width * 0.022).clamp(6.0, 12.0).toDouble();
+    final spacing = (width * 0.012).clamp(3.0, 7.0).toDouble();
+    final contentWidth = width - padding * 2;
+
+    final rows = const [
       ['1', '2', '3', '/'],
       ['4', '5', '6', 'SPACE'],
       ['7', '8', '9', '.'],
@@ -1510,22 +1542,20 @@ class _FractionAnswerPad extends StatelessWidget {
       ['BACK', 'C', '→'],
     ];
 
-    final buttonHeight = ((panelHeight - padding * 2 - spacing * (rows.length - 1)) / rows.length)
-        .clamp(38.0, 72.0)
+    final keyWidth = ((contentWidth - spacing * 3) / 4).clamp(44.0, 152.0).toDouble();
+    final keyHeight = ((height - padding * 2 - spacing * (rows.length - 1)) / rows.length)
+        .clamp(28.0, 62.0)
         .toDouble();
-    final buttonWidth = ((panelWidth - padding * 2 - spacing * 3) / 4)
-        .clamp(54.0, 160.0)
-        .toDouble();
-    final fontSize = (min(buttonWidth, buttonHeight) * 0.43).clamp(17.0, 32.0).toDouble();
+    final fontSize = (min(keyWidth, keyHeight) * 0.44).clamp(15.0, 30.0).toDouble();
 
     return SizedBox(
-      width: panelWidth,
-      height: panelHeight,
+      width: width,
+      height: height,
       child: Container(
         padding: EdgeInsets.all(padding),
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.88),
-          borderRadius: BorderRadius.circular((panelWidth * 0.045).clamp(18.0, 28.0).toDouble()),
+          color: Colors.white.withValues(alpha: 0.90),
+          borderRadius: BorderRadius.circular((width * 0.04).clamp(16.0, 28.0).toDouble()),
           border: Border.all(color: const Color(0x1F000000), width: 1.3),
           boxShadow: const [
             BoxShadow(
@@ -1535,22 +1565,28 @@ class _FractionAnswerPad extends StatelessWidget {
             ),
           ],
         ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            for (var r = 0; r < rows.length; r++) ...[
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  for (var i = 0; i < rows[r].length; i++) ...[
-                    _button(rows[r][i], buttonWidth, buttonHeight, fontSize),
-                    if (i != rows[r].length - 1) SizedBox(width: spacing),
-                  ],
+        child: Center(
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (var r = 0; r < rows.length; r++) ...[
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      for (var i = 0; i < rows[r].length; i++) ...[
+                        _button(rows[r][i], keyWidth, keyHeight, fontSize),
+                        if (i != rows[r].length - 1) SizedBox(width: spacing),
+                      ],
+                    ],
+                  ),
+                  if (r != rows.length - 1) SizedBox(height: spacing),
                 ],
-              ),
-              if (r != rows.length - 1) SizedBox(height: spacing),
-            ],
-          ],
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -1570,20 +1606,16 @@ class _FractionAnswerPad extends StatelessWidget {
       _ => () => onTap(label),
     };
 
-    final effectiveWidth = label == '→'
-        ? width * 1.45
-        : (label == 'C' || label == 'BACK' ? width * 1.18 : width);
-
     return SizedBox(
-      width: effectiveWidth,
+      width: width,
       height: height,
       child: ElevatedButton(
         onPressed: isDisabled ? null : action,
         style: ElevatedButton.styleFrom(
           padding: EdgeInsets.zero,
-          minimumSize: Size(effectiveWidth, height),
+          minimumSize: Size(width, height),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular((height * 0.26).clamp(10.0, 18.0).toDouble()),
+            borderRadius: BorderRadius.circular((height * 0.26).clamp(8.0, 16.0).toDouble()),
           ),
           textStyle: TextStyle(fontSize: fontSize, fontWeight: FontWeight.w900),
         ),

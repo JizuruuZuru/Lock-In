@@ -956,7 +956,7 @@ class _ExamGameState extends State<ExamGame> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.maxWidth;
-        final keypadHeight = (constraints.maxHeight * 0.30).clamp(190.0, 310.0);
+        final keypadHeight = (constraints.maxHeight * 0.31).clamp(210.0, 320.0);
         return Column(
           children: [
             _card(
@@ -1100,22 +1100,27 @@ class _ExamKeypad extends StatelessWidget {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final padding = (constraints.maxWidth * 0.018).clamp(8.0, 14.0).toDouble();
-        final spacing = (constraints.maxWidth * 0.012).clamp(4.0, 8.0).toDouble();
-        final rowCount = rows.length;
-        final keyHeight = ((constraints.maxHeight - padding * 2 - spacing * (rowCount - 1)) / rowCount)
-            .clamp(38.0, 76.0)
+        final width = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : MediaQuery.sizeOf(context).width * 0.96;
+        final height = constraints.maxHeight.isFinite
+            ? constraints.maxHeight
+            : MediaQuery.sizeOf(context).height * 0.24;
+        final padding = (width * 0.014).clamp(6.0, 12.0).toDouble();
+        final spacing = (width * 0.010).clamp(3.0, 7.0).toDouble();
+        final contentWidth = width - padding * 2;
+        final keyWidth = ((contentWidth - spacing * 4) / 5).clamp(38.0, 142.0).toDouble();
+        final keyHeight = ((height - padding * 2 - spacing * (rows.length - 1)) / rows.length)
+            .clamp(28.0, 58.0)
             .toDouble();
-        final keyWidth = ((constraints.maxWidth - padding * 2 - spacing * 4) / 5)
-            .clamp(48.0, 150.0)
-            .toDouble();
-        final fontSize = (min(keyWidth, keyHeight) * 0.42).clamp(16.0, 28.0).toDouble();
+        final fontSize = (min(keyWidth, keyHeight) * 0.43).clamp(14.0, 27.0).toDouble();
 
         return Container(
           width: double.infinity,
+          height: height,
           padding: EdgeInsets.all(padding),
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.88),
+            color: Colors.white.withValues(alpha: 0.90),
             borderRadius: BorderRadius.circular(22),
             border: Border.all(color: const Color(0x1F000000), width: 1.3),
             boxShadow: const [
@@ -1126,31 +1131,37 @@ class _ExamKeypad extends StatelessWidget {
               ),
             ],
           ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              for (var r = 0; r < rows.length; r++) ...[
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    for (var c = 0; c < rows[r].length; c++) ...[
-                      _keyButton(
-                        context,
-                        label: rows[r][c],
-                        width: rows[r][c] == 'Submit' ? keyWidth * 2.05 : keyWidth,
-                        height: keyHeight,
-                        fontSize: rows[r][c] == 'Submit' || rows[r][c] == 'space'
-                            ? fontSize * 0.78
-                            : fontSize,
-                        onPressed: disabled ? null : _actionFor(rows[r][c]),
-                      ),
-                      if (c != rows[r].length - 1) SizedBox(width: spacing),
-                    ],
+          child: Center(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (var r = 0; r < rows.length; r++) ...[
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        for (var c = 0; c < rows[r].length; c++) ...[
+                          _keyButton(
+                            context,
+                            label: rows[r][c],
+                            width: rows[r][c] == 'Submit' ? keyWidth * 2.05 : keyWidth,
+                            height: keyHeight,
+                            fontSize: rows[r][c] == 'Submit' || rows[r][c] == 'space'
+                                ? fontSize * 0.78
+                                : fontSize,
+                            onPressed: disabled ? null : _actionFor(rows[r][c]),
+                          ),
+                          if (c != rows[r].length - 1) SizedBox(width: spacing),
+                        ],
+                      ],
+                    ),
+                    if (r != rows.length - 1) SizedBox(height: spacing),
                   ],
-                ),
-                if (r != rows.length - 1) SizedBox(height: spacing),
-              ],
-            ],
+                ],
+              ),
+            ),
           ),
         );
       },
@@ -1183,13 +1194,13 @@ class _ExamKeypad extends StatelessWidget {
           minimumSize: Size(width, height),
           textStyle: TextStyle(fontSize: fontSize, fontWeight: FontWeight.w900),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular((height * 0.22).clamp(10.0, 18.0).toDouble()),
+            borderRadius: BorderRadius.circular((height * 0.22).clamp(8.0, 16.0).toDouble()),
           ),
         ),
         child: FittedBox(
           fit: BoxFit.scaleDown,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 5),
             child: Text(label),
           ),
         ),

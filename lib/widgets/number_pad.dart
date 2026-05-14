@@ -53,7 +53,7 @@ class NumberPad extends StatelessWidget {
                 .toDouble();
 
         final double panelPadding =
-            (panelExtent * 0.045).clamp(10.0, 20.0).toDouble();
+            (panelExtent * 0.038).clamp(8.0, 18.0).toDouble();
         final double effectiveSpacing =
             (spacing ?? (panelExtent * 0.025)).clamp(5.0, 12.0).toDouble();
         final double answerHeight = showInputDisplay
@@ -92,10 +92,29 @@ class NumberPad extends StatelessWidget {
           ),
         ).clamp(18.0, 116.0).toDouble();
 
+        final double bottomButtonSize = min(
+          computedButtonSize,
+          ((panelExtent - (panelPadding * 2) -
+                      (effectiveSpacing * (bottomButtonCount - 1)) -
+                      10) /
+                  bottomButtonCount)
+              .clamp(18.0, 116.0),
+        ).toDouble();
+
         final gridWidth = computedButtonSize * 3 + effectiveSpacing * 2;
         final gridHeight = computedButtonSize * 3 + effectiveSpacing * 2;
-        final bottomRowWidth = computedButtonSize * bottomButtonCount +
+        final bottomRowWidth = bottomButtonSize * bottomButtonCount +
             effectiveSpacing * (bottomButtonCount - 1);
+        // Add a small safety buffer so Flutter debug mode never shows the
+        // yellow/black RenderFlex overflow stripes from fractional pixel rounding.
+        final contentHeight = panelPadding * 2 +
+            answerHeight +
+            (showInputDisplay ? effectiveSpacing : 0) +
+            gridHeight +
+            effectiveSpacing +
+            bottomButtonSize +
+            18;
+        final panelHeight = contentHeight.clamp(120.0, 640.0).toDouble();
         final double answerFontSize =
             (computedButtonSize * 0.38).clamp(18.0, 34.0).toDouble();
         final double buttonFontSize =
@@ -105,10 +124,13 @@ class NumberPad extends StatelessWidget {
 
         return Align(
           alignment: alignment,
-          child: SizedBox(
-            width: panelExtent,
-            height: panelExtent,
-            child: Container(
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: alignment,
+            child: SizedBox(
+              width: panelExtent,
+              height: panelHeight,
+              child: Container(
               padding: EdgeInsets.all(panelPadding),
               decoration: BoxDecoration(
                 color: Colors.white.withValues(alpha: 0.86),
@@ -193,7 +215,7 @@ class NumberPad extends StatelessWidget {
                         for (var index = 0; index < bottomButtons.length; index++) ...[
                           _buttonForLabel(
                             bottomButtons[index],
-                            computedButtonSize,
+                            bottomButtonSize,
                             buttonFontSize: buttonFontSize,
                             actionFontSize: actionFontSize,
                           ),
@@ -204,6 +226,7 @@ class NumberPad extends StatelessWidget {
                     ),
                   ),
                 ],
+              ),
               ),
             ),
           ),

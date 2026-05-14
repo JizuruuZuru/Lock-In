@@ -853,7 +853,7 @@ class _MeasurementsGameState extends State<MeasurementsGame> {
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
                 crossAxisCount: isWide ? 3 : 1,
-                childAspectRatio: isWide ? 2.15 : 3.45,
+                childAspectRatio: isWide ? 2.15 : 2.75,
                 mainAxisSpacing: 12,
                 crossAxisSpacing: 12,
                 children: [
@@ -889,7 +889,7 @@ class _MeasurementsGameState extends State<MeasurementsGame> {
       onTap: () => _selectMode(mode),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
           color: active ? const Color(0xFFE8F5E9) : _panelColor,
           borderRadius: BorderRadius.circular(22),
@@ -908,16 +908,16 @@ class _MeasurementsGameState extends State<MeasurementsGame> {
         child: Row(
           children: [
             Container(
-              width: 52,
-              height: 52,
+              width: 44,
+              height: 44,
               decoration: BoxDecoration(
                 color: _accentColor.withValues(alpha: 0.14),
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(color: _inkColor, width: 1.6),
               ),
-              child: Icon(_modeIcon(mode), color: _accentColor, size: 30),
+              child: Icon(_modeIcon(mode), color: _accentColor, size: 26),
             ),
-            const SizedBox(width: 14),
+            const SizedBox(width: 10),
             Expanded(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -926,17 +926,17 @@ class _MeasurementsGameState extends State<MeasurementsGame> {
                   Text(
                     _modeTitle(mode),
                     style: const TextStyle(
-                      fontSize: 18,
+                      fontSize: 17,
                       fontWeight: FontWeight.w900,
                     ),
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 2),
                   Text(
                     _modeSubtitle(mode),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      fontSize: 13,
+                      fontSize: 12,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -1441,8 +1441,8 @@ class _MeasurementsGameState extends State<MeasurementsGame> {
           final padWidth = min(isWide ? width * 0.42 : width * 0.96, 680.0)
               .clamp(320.0, 680.0)
               .toDouble();
-          final padHeight = min(isWide ? height * 0.72 : height * 0.36, 360.0)
-              .clamp(220.0, 360.0)
+          final padTarget = min(isWide ? height * 0.72 : height * 0.38, 360.0);
+          final padHeight = min(max(220.0, padTarget), max(220.0, height * 0.52))
               .toDouble();
 
           final content = <Widget>[
@@ -1782,60 +1782,69 @@ class _MeasurementAnswerPad extends StatelessWidget {
             : MediaQuery.sizeOf(context).width * 0.96;
         final panelHeight = constraints.maxHeight.isFinite
             ? constraints.maxHeight
-            : MediaQuery.sizeOf(context).height * 0.34;
-        final padding = (panelWidth * 0.024).clamp(8.0, 14.0).toDouble();
-        final spacing = (panelWidth * 0.014).clamp(4.0, 8.0).toDouble();
+            : MediaQuery.sizeOf(context).height * 0.30;
+        final width = panelWidth.clamp(280.0, 720.0).toDouble();
+        final height = panelHeight.clamp(220.0, 380.0).toDouble();
+        final padding = (width * 0.020).clamp(6.0, 12.0).toDouble();
+        final spacing = (width * 0.010).clamp(3.0, 7.0).toDouble();
         final rows = const [
           ['1', '2', '3', '.'],
           ['4', '5', '6', 'SPACE'],
           ['7', '8', '9', '⌫'],
           ['C', '0', '→'],
         ];
-        final keyHeight = ((panelHeight - padding * 2 - spacing * (rows.length - 1)) / rows.length)
-            .clamp(40.0, 78.0)
+        final contentWidth = width - padding * 2;
+        final keyWidth = ((contentWidth - spacing * 3) / 4).clamp(42.0, 150.0).toDouble();
+        final keyHeight = ((height - padding * 2 - spacing * (rows.length - 1)) / rows.length)
+            .clamp(40.0, 84.0)
             .toDouble();
-        final keyWidth = ((panelWidth - padding * 2 - spacing * 3) / 4)
-            .clamp(56.0, 160.0)
-            .toDouble();
-        final fontSize = (min(keyWidth, keyHeight) * 0.42).clamp(18.0, 34.0).toDouble();
+        final fontSize = (min(keyWidth, keyHeight) * 0.44).clamp(15.0, 31.0).toDouble();
 
-        return Container(
-          width: panelWidth,
-          height: panelHeight,
-          padding: EdgeInsets.all(padding),
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.90),
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: const Color(0x1F000000), width: 1.3),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x18000000),
-                blurRadius: 14,
-                offset: Offset(0, 8),
-              ),
-            ],
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              for (var row = 0; row < rows.length; row++) ...[
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
+        return SizedBox(
+          width: width,
+          height: height,
+          child: Container(
+            padding: EdgeInsets.all(padding),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.90),
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(color: const Color(0x1F000000), width: 1.3),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x18000000),
+                  blurRadius: 14,
+                  offset: Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Center(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    for (var col = 0; col < rows[row].length; col++) ...[
-                      _button(
-                        rows[row][col],
-                        rows[row][col] == '→' ? keyWidth * 1.55 : keyWidth,
-                        keyHeight,
-                        fontSize,
+                    for (var row = 0; row < rows.length; row++) ...[
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          for (var col = 0; col < rows[row].length; col++) ...[
+                            _button(
+                              rows[row][col],
+                              keyWidth,
+                              keyHeight,
+                              fontSize,
+                            ),
+                            if (col != rows[row].length - 1) SizedBox(width: spacing),
+                          ],
+                        ],
                       ),
-                      if (col != rows[row].length - 1) SizedBox(width: spacing),
+                      if (row != rows.length - 1) SizedBox(height: spacing),
                     ],
                   ],
                 ),
-                if (row != rows.length - 1) SizedBox(height: spacing),
-              ],
-            ],
+              ),
+            ),
           ),
         );
       },
@@ -1867,7 +1876,7 @@ class _MeasurementAnswerPad extends StatelessWidget {
           padding: EdgeInsets.zero,
           minimumSize: Size(width, height),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular((height * 0.24).clamp(10.0, 18.0).toDouble()),
+            borderRadius: BorderRadius.circular((height * 0.24).clamp(8.0, 16.0).toDouble()),
           ),
           textStyle: TextStyle(
             fontSize: label == 'SPACE' ? fontSize * 0.72 : fontSize,
