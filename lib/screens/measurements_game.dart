@@ -1627,6 +1627,7 @@ class _MeasurementsGameState extends State<MeasurementsGame> {
     );
   }
 
+  // ignore: unused_element
   Widget _visualForQuestion() {
     switch (currentQuestion.visual) {
       case _MeasurementVisual.ruler:
@@ -2000,7 +2001,6 @@ class _CupPainter extends CustomPainter {
       ..strokeWidth = 4;
     final fill = Paint()..color = const Color(0x664CAF50);
     final amount = (value.clamp(1, 4) / 4);
-    final fillRect = Rect.fromLTWH(rect.left, rect.bottom - rect.height * amount, rect.width, rect.height * amount);
     canvas.drawRRect(RRect.fromRectAndRadius(rect, const Radius.circular(16)), fill);
     canvas.drawRRect(RRect.fromRectAndRadius(rect, const Radius.circular(16)), border);
     for (var i = 1; i <= 4; i++) {

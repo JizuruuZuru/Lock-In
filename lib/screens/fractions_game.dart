@@ -1300,12 +1300,14 @@ class _FractionsGameState extends State<FractionsGame> {
     );
   }
 
+  // ignore: unused_element
   bool get _hasVisual {
     return currentQuestion.pieNumerator != null ||
         currentQuestion.setTotal != null ||
         currentQuestion.leftFraction != null;
   }
 
+  // ignore: unused_element
   Widget _buildVisualIfNeeded() {
     if (currentQuestion.pieNumerator != null && currentQuestion.pieDenominator != null) {
       return SizedBox(
@@ -1522,7 +1524,7 @@ class _FractionAnswerPad extends StatelessWidget {
       child: Container(
         padding: EdgeInsets.all(padding),
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.88),
+          color: Colors.white.withValues(alpha: 0.88),
           borderRadius: BorderRadius.circular((panelWidth * 0.045).clamp(18.0, 28.0).toDouble()),
           border: Border.all(color: const Color(0x1F000000), width: 1.3),
           boxShadow: const [
@@ -1697,7 +1699,7 @@ class _PieFractionPainter extends CustomPainter {
       ..color = Colors.white
       ..style = PaintingStyle.fill;
     final shadedPaint = Paint()
-      ..color = fillColor.withOpacity(0.82)
+      ..color = fillColor.withValues(alpha: 0.82)
       ..style = PaintingStyle.fill;
     final linePaint = Paint()
       ..color = lineColor

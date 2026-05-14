@@ -929,7 +929,7 @@ class _ExamGameState extends State<ExamGame> {
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: _inkColor.withOpacity(0.25), width: 1.5),
+                  border: Border.all(color: _inkColor.withValues(alpha: 0.25), width: 1.5),
                 ),
                 child: Text(
                   _topicSummary(),
@@ -990,7 +990,7 @@ class _ExamGameState extends State<ExamGame> {
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                             decoration: BoxDecoration(
-                              color: _accentColor.withOpacity(0.14),
+                              color: _accentColor.withValues(alpha: 0.14),
                               borderRadius: BorderRadius.circular(999),
                             ),
                             child: Text(
@@ -1115,7 +1115,7 @@ class _ExamKeypad extends StatelessWidget {
           width: double.infinity,
           padding: EdgeInsets.all(padding),
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.88),
+            color: Colors.white.withValues(alpha: 0.88),
             borderRadius: BorderRadius.circular(22),
             border: Border.all(color: const Color(0x1F000000), width: 1.3),
             boxShadow: const [

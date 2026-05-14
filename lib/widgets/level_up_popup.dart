@@ -99,7 +99,7 @@ class _LevelUpPopupState extends State<LevelUpPopup>
                       borderRadius: BorderRadius.circular(50),
                       boxShadow: [
                         BoxShadow(
-                          color: const Color(0xFF9C27B0).withOpacity(0.3),
+                          color: const Color(0xFF9C27B0).withValues(alpha: 0.3),
                           blurRadius: 20,
                           spreadRadius: 5,
                         ),
@@ -130,10 +130,10 @@ class _LevelUpPopupState extends State<LevelUpPopup>
                 Container(
                   padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF9C27B0).withOpacity(0.1),
+                    color: const Color(0xFF9C27B0).withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(50),
                     border: Border.all(
-                      color: const Color(0xFF9C27B0).withOpacity(0.3),
+                      color: const Color(0xFF9C27B0).withValues(alpha: 0.3),
                       width: 2,
                     ),
                   ),
@@ -177,7 +177,7 @@ class _LevelUpPopupState extends State<LevelUpPopup>
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      shadowColor: const Color(0xFF9C27B0).withOpacity(0.5),
+                      shadowColor: const Color(0xFF9C27B0).withValues(alpha: 0.5),
                       elevation: 8,
                     ),
                     child: const Text(

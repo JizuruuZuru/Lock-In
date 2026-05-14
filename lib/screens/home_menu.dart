@@ -127,7 +127,7 @@ class _HomeMenuState extends State<HomeMenu> {
                       children: [
                         Container(
                           decoration: BoxDecoration(
-                            color: _accentColor.withOpacity(0.15),
+                            color: _accentColor.withValues(alpha: 0.15),
                             borderRadius: BorderRadius.circular(10),
                           ),
                           padding: const EdgeInsets.all(6),
@@ -236,7 +236,7 @@ class _HomeMenuState extends State<HomeMenu> {
                   children: [
                     Container(
                       decoration: BoxDecoration(
-                        color: const Color(0xFFD84315).withOpacity(0.15),
+                        color: const Color(0xFFD84315).withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(10),
                       ),
                       padding: const EdgeInsets.all(6),
@@ -309,7 +309,7 @@ class _HomeMenuState extends State<HomeMenu> {
       SetOptions(merge: true),
     );
 
-    if (!mounted) return;
+    if (!mounted || !context.mounted) return;
 
     final updatedUserData = Map<String, dynamic>.from(userData ?? {});
     updatedUserData['history_cleared_at'] = now;
@@ -544,7 +544,7 @@ class _HomeMenuState extends State<HomeMenu> {
                 padding: const EdgeInsets.symmetric(
                     horizontal: 12, vertical: 10),
                 decoration: BoxDecoration(
-                  color: rankColors[rank].withOpacity(0.45),
+                  color: rankColors[rank].withValues(alpha: 0.45),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
                     color: rankInkColors[rank],
@@ -735,16 +735,16 @@ class _HomeMenuState extends State<HomeMenu> {
           margin: const EdgeInsets.symmetric(horizontal: 6),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
           decoration: BoxDecoration(
-            color: isActive ? _accentColor.withOpacity(0.2) : _panelColor,
+            color: isActive ? _accentColor.withValues(alpha: 0.2) : _panelColor,
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
-              color: isActive ? _accentColor : _inkColor.withOpacity(0.2),
+              color: isActive ? _accentColor : _inkColor.withValues(alpha: 0.2),
               width: isActive ? 2.2 : 2,
             ),
             boxShadow: isActive
                 ? [
                     BoxShadow(
-                      color: _accentColor.withOpacity(0.3),
+                      color: _accentColor.withValues(alpha: 0.3),
                       offset: const Offset(2, 3),
                       blurRadius: 0,
                     ),
@@ -888,9 +888,9 @@ class _HomeMenuState extends State<HomeMenu> {
         Container(
           padding: const EdgeInsets.all(9),
           decoration: BoxDecoration(
-            color: _accentColor.withOpacity(0.14),
+            color: _accentColor.withValues(alpha: 0.14),
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: _accentColor.withOpacity(0.28), width: 1.6),
+            border: Border.all(color: _accentColor.withValues(alpha: 0.28), width: 1.6),
           ),
           child: Icon(icon, color: _accentColor, size: 26),
         ),
@@ -958,7 +958,7 @@ class _HomeMenuState extends State<HomeMenu> {
                 ),
                 const SizedBox(height: 14),
                 DropdownButtonFormField<int>(
-                  value: _selectedLessonIndex,
+                  initialValue: _selectedLessonIndex,
                   isExpanded: true,
                   decoration: _dropdownDecoration('Select a lesson subject'),
                   dropdownColor: _panelColor,
@@ -1020,7 +1020,7 @@ class _HomeMenuState extends State<HomeMenu> {
                 ),
                 const SizedBox(height: 14),
                 DropdownButtonFormField<ExamDifficulty>(
-                  value: _selectedExamDifficulty,
+                  initialValue: _selectedExamDifficulty,
                   isExpanded: true,
                   decoration: _dropdownDecoration('Select Easy, Medium, or Hard'),
                   dropdownColor: _panelColor,
@@ -1244,7 +1244,7 @@ class _HomeMenuState extends State<HomeMenu> {
                                             ),
                                             decoration: BoxDecoration(
                                               color: _accentColor
-                                                  .withOpacity(0.15),
+                                                  .withValues(alpha: 0.15),
                                               borderRadius:
                                                   BorderRadius.circular(12),
                                               border: Border.all(
@@ -1432,7 +1432,7 @@ class _HomeMenuState extends State<HomeMenu> {
                       vertical: 12,
                     ),
                     decoration: BoxDecoration(
-                      color: _accentColor.withOpacity(0.1),
+                      color: _accentColor.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(color: _accentColor, width: 2),
                     ),
@@ -1473,6 +1473,8 @@ class _HomeMenuState extends State<HomeMenu> {
                                   return const _SignOutConfirmationDialog();
                                 },
                               );
+
+                              if (!context.mounted) return;
 
                               if (shouldSignOut == true) {
                                 await _auth.signOut();

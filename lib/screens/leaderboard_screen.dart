@@ -193,13 +193,13 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                             Color? bgColor;
                             Color borderColor = _inkColor;
                             if (rank == 1) {
-                              bgColor = const Color(0xFFFFD700).withOpacity(0.25); // gold
+                              bgColor = const Color(0xFFFFD700).withValues(alpha: 0.25); // gold
                               borderColor = const Color(0xFFB8860B);
                             } else if (rank == 2) {
-                              bgColor = const Color(0xFFC0C0C0).withOpacity(0.25); // silver
+                              bgColor = const Color(0xFFC0C0C0).withValues(alpha: 0.25); // silver
                               borderColor = const Color(0xFF808080);
                             } else if (rank == 3) {
-                              bgColor = const Color(0xFFCD7F32).withOpacity(0.25); // bronze
+                              bgColor = const Color(0xFFCD7F32).withValues(alpha: 0.25); // bronze
                               borderColor = const Color(0xFF8B4513);
                             }
 

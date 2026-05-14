@@ -70,7 +70,7 @@ class _IncorrectSplashState extends State<IncorrectSplash>
             scale: _scaleAnimation.value,
             child: Container(
               decoration: BoxDecoration(
-                color: const Color(0xFFF44336).withOpacity(0.6),
+                color: const Color(0xFFF44336).withValues(alpha: 0.6),
                 borderRadius: BorderRadius.circular(20),
               ),
               child: Center(
@@ -80,7 +80,7 @@ class _IncorrectSplashState extends State<IncorrectSplash>
                     Icon(
                       Icons.cancel,
                       size: 80,
-                      color: Colors.white.withOpacity(0.9),
+                      color: Colors.white.withValues(alpha: 0.9),
                     ),
                     const SizedBox(height: 16),
                     Text(
@@ -88,7 +88,7 @@ class _IncorrectSplashState extends State<IncorrectSplash>
                       style: TextStyle(
                         fontSize: 36,
                         fontWeight: FontWeight.w900,
-                        color: Colors.white.withOpacity(0.9),
+                        color: Colors.white.withValues(alpha: 0.9),
                         letterSpacing: 1,
                       ),
                     ),
