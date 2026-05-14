@@ -6,7 +6,7 @@ import '../services/sound_service.dart';
 
 class LevelUpPopup extends StatefulWidget {
   final int newLevel;
-  final String message;
+  final String message; // Custom message like "Great Job!" or achievement text
   final VoidCallback onContinue;
 
   const LevelUpPopup({
@@ -33,7 +33,7 @@ class _LevelUpPopupState extends State<LevelUpPopup>
     unawaited(SoundService().playLevelUpSound());
 
     _controller = AnimationController(
-      duration: const Duration(milliseconds: 650),
+      duration: const Duration(milliseconds: 600),
       vsync: this,
     );
 
@@ -45,7 +45,7 @@ class _LevelUpPopupState extends State<LevelUpPopup>
       CurvedAnimation(parent: _controller, curve: Curves.easeInCubic),
     );
 
-    _bounceAnimation = Tween<double>(begin: -26, end: 0).animate(
+    _bounceAnimation = Tween<double>(begin: -30, end: 0).animate(
       CurvedAnimation(parent: _controller, curve: Curves.elasticOut),
     );
 
@@ -58,36 +58,8 @@ class _LevelUpPopupState extends State<LevelUpPopup>
     super.dispose();
   }
 
-  Future<void> _confirmContinue() async {
-    SoundService().playButtonSoundNow();
-    final shouldContinue = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Go to next level?'),
-        content: Text('Proceed to Level ${widget.newLevel}?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Next'),
-          ),
-        ],
-      ),
-    );
-
-    if (shouldContinue == true && mounted) {
-      widget.onContinue();
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
-    final screen = MediaQuery.sizeOf(context);
-    final gifHeight = (screen.height * 0.22).clamp(170.0, 250.0);
-
     return ScaleTransition(
       scale: _scaleAnimation,
       child: FadeTransition(
@@ -95,13 +67,11 @@ class _LevelUpPopupState extends State<LevelUpPopup>
         child: Dialog(
           backgroundColor: Colors.transparent,
           elevation: 0,
-          insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
           child: Container(
-            constraints: const BoxConstraints(maxWidth: 520),
-            padding: const EdgeInsets.fromLTRB(24, 24, 24, 20),
+            padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
               color: const Color(0xFFFFFBEE),
-              borderRadius: BorderRadius.circular(26),
+              borderRadius: BorderRadius.circular(24),
               border: Border.all(color: const Color(0xFF9C27B0), width: 2.5),
               boxShadow: const [
                 BoxShadow(
@@ -114,21 +84,22 @@ class _LevelUpPopupState extends State<LevelUpPopup>
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                // Level Up Icon with animation
                 Transform.translate(
                   offset: Offset(0, _bounceAnimation.value),
                   child: Container(
-                    width: 96,
-                    height: 96,
+                    width: 100,
+                    height: 100,
                     decoration: BoxDecoration(
                       gradient: const LinearGradient(
                         colors: [Color(0xFF9C27B0), Color(0xFFF57C00)],
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                       ),
-                      borderRadius: BorderRadius.circular(48),
+                      borderRadius: BorderRadius.circular(50),
                       boxShadow: [
                         BoxShadow(
-                          color: const Color(0xFF9C27B0).withValues(alpha: 0.3),
+                          color: const Color(0xFF9C27B0).withOpacity(0.3),
                           blurRadius: 20,
                           spreadRadius: 5,
                         ),
@@ -136,12 +107,14 @@ class _LevelUpPopupState extends State<LevelUpPopup>
                     ),
                     child: const Icon(
                       Icons.star,
-                      size: 56,
+                      size: 60,
                       color: Colors.white,
                     ),
                   ),
                 ),
-                const SizedBox(height: 18),
+                const SizedBox(height: 24),
+
+                // Title
                 const Text(
                   'Level Up!',
                   style: TextStyle(
@@ -151,14 +124,16 @@ class _LevelUpPopupState extends State<LevelUpPopup>
                     letterSpacing: 1,
                   ),
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 12),
+
+                // Level Number
                 Container(
                   padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF9C27B0).withValues(alpha: 0.1),
+                    color: const Color(0xFF9C27B0).withOpacity(0.1),
                     borderRadius: BorderRadius.circular(50),
                     border: Border.all(
-                      color: const Color(0xFF9C27B0).withValues(alpha: 0.3),
+                      color: const Color(0xFF9C27B0).withOpacity(0.3),
                       width: 2,
                     ),
                   ),
@@ -173,6 +148,8 @@ class _LevelUpPopupState extends State<LevelUpPopup>
                   ),
                 ),
                 const SizedBox(height: 16),
+
+                // Message
                 Text(
                   widget.message,
                   textAlign: TextAlign.center,
@@ -183,27 +160,16 @@ class _LevelUpPopupState extends State<LevelUpPopup>
                     height: 1.5,
                   ),
                 ),
-                const SizedBox(height: 18),
-                Align(
-                  alignment: Alignment.bottomCenter,
-                  child: SizedBox(
-                    width: double.infinity,
-                    height: gifHeight,
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(20),
-                      child: Image.asset(
-                        'assets/gifs/clap.gif',
-                        fit: BoxFit.contain,
-                        gaplessPlayback: true,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 32),
+
+                // Continue Button
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
-                    onPressed: _confirmContinue,
+                    onPressed: () {
+                      SoundService().playButtonSoundNow();
+                      widget.onContinue();
+                    },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF9C27B0),
                       foregroundColor: Colors.white,
@@ -211,7 +177,7 @@ class _LevelUpPopupState extends State<LevelUpPopup>
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      shadowColor: const Color(0xFF9C27B0).withValues(alpha: 0.5),
+                      shadowColor: const Color(0xFF9C27B0).withOpacity(0.5),
                       elevation: 8,
                     ),
                     child: const Text(

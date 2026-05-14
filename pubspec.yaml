@@ -105,7 +105,6 @@ flutter:
 
     - assets/sounds/leave_warning.wav
 
-    - assets/gifs/thinking.gif
     - assets/gifs/success.gif
     - assets/gifs/fail.gif
     - assets/gifs/clap.gif

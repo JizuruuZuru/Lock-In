@@ -62,7 +62,19 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                     final data = doc.data() as Map<String, dynamic>;
                     final game = (data['game'] ?? '').toString();
 
-                    return game.startsWith('Math Game') || game == 'Number Memory';
+                    return game.startsWith('Math Game') ||
+                        game == 'Number Memory' ||
+                        game == 'Roman Numerals' ||
+                        game == 'Analog Clock' ||
+                        game == 'Place Value' ||
+                        game == 'Rounding Numbers' ||
+                        game == 'Order of Operations' ||
+                        game == 'Fractions' ||
+                        game == 'Measurements' ||
+                        game.startsWith('Measurements -') ||
+                        game == 'Easy Exam' ||
+                        game == 'Medium Exam' ||
+                        game == 'Hard Exam';
                   }).toList();
 
                   if (allDocs.isEmpty) {
@@ -181,13 +193,13 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                             Color? bgColor;
                             Color borderColor = _inkColor;
                             if (rank == 1) {
-                              bgColor = const Color(0xFFFFD700).withValues(alpha: 0.25); // gold
+                              bgColor = const Color(0xFFFFD700).withOpacity(0.25); // gold
                               borderColor = const Color(0xFFB8860B);
                             } else if (rank == 2) {
-                              bgColor = const Color(0xFFC0C0C0).withValues(alpha: 0.25); // silver
+                              bgColor = const Color(0xFFC0C0C0).withOpacity(0.25); // silver
                               borderColor = const Color(0xFF808080);
                             } else if (rank == 3) {
-                              bgColor = const Color(0xFFCD7F32).withValues(alpha: 0.25); // bronze
+                              bgColor = const Color(0xFFCD7F32).withOpacity(0.25); // bronze
                               borderColor = const Color(0xFF8B4513);
                             }
 

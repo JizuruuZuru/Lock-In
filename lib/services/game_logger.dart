@@ -1,26 +1,14 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:uuid/uuid.dart';
 
-String _displayNameFromProfile(
-  User user,
-  Map<String, dynamic>? profile,
-) {
-  final fullName = (profile?['fullName'] ?? '').toString().trim();
-  if (fullName.isNotEmpty) return fullName;
-
-  final firstName = (profile?['firstName'] ?? '').toString().trim();
-  final lastName = (profile?['lastName'] ?? '').toString().trim();
-  final combinedName = '$firstName $lastName'.trim();
-  if (combinedName.isNotEmpty) return combinedName;
-
-  final username = (profile?['username'] ?? '').toString().trim();
-  if (username.isNotEmpty) return username;
-
-  final displayName = user.displayName?.trim();
-  if (displayName != null && displayName.isNotEmpty) return displayName;
-
-  return user.email?.split('@').first ?? 'Player';
+String _safeGameField(String gameName) {
+  return gameName
+      .trim()
+      .toLowerCase()
+      .replaceAll(RegExp(r'[^a-z0-9]+'), '_')
+      .replaceAll(RegExp(r'_+'), '_')
+      .replaceAll(RegExp(r'^_|_$'), '');
 }
 
 class GameLogger {
@@ -37,6 +25,8 @@ class GameLogger {
     _currentGameName = null;
   }
 
+  /// Shared Firebase history logger for all games.
+  /// This creates/updates one log document per active session to prevent duplicates.
   static Future<void> logGame({
     required String gameName,
     required int score,
@@ -50,32 +40,33 @@ class GameLogger {
 
     final firestore = FirebaseFirestore.instance;
     final userRef = firestore.collection('users').doc(user.uid);
-    final snapshot = await userRef.get();
-    final profile = snapshot.data();
-    final playerName = _displayNameFromProfile(user, profile);
+    final now = FieldValue.serverTimestamp();
+    final gameKey = _safeGameField(gameName);
 
     await userRef.collection('game_logs').doc(_currentSessionId).set({
-      'score': score,
-      'timestamp': Timestamp.now(),
       'game': gameName,
+      'gameKey': gameKey,
+      'score': score,
       'sessionId': _currentSessionId,
-      'userId': user.uid,
-      'username': playerName,
-      'fullName': playerName,
-      'firstName': profile?['firstName'],
-      'lastName': profile?['lastName'],
-      'age': profile?['age'],
-      'isAnonymous': user.isAnonymous,
+      'timestamp': now,
+      'updatedAt': now,
     }, SetOptions(merge: true));
 
-    final highscore = snapshot.data()?['highscore'] ?? 0;
+    final snapshot = await userRef.get();
+    final data = snapshot.data();
+    final currentGameHighscore = data?['${gameKey}_highscore'];
+    final currentGlobalHighscore = data?['highscore'];
+    final gameHighscore = currentGameHighscore is num ? currentGameHighscore.toInt() : 0;
+    final globalHighscore = currentGlobalHighscore is num ? currentGlobalHighscore.toInt() : 0;
+
     await userRef.set({
+      'last_game': gameName,
+      'last_game_key': gameKey,
+      'last_score': score,
+      'last_played': now,
       'email': user.email,
-      'username': playerName,
-      'fullName': playerName,
-      'lastPlayedAt': FieldValue.serverTimestamp(),
-      'games_played_count': FieldValue.increment(1),
-      if (score > highscore) 'highscore': score,
+      if (score > gameHighscore) '${gameKey}_highscore': score,
+      if (score > globalHighscore) 'highscore': score,
     }, SetOptions(merge: true));
   }
 }

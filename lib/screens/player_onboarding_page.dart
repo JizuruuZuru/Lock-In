@@ -336,26 +336,41 @@ class _PlayerOnboardingPageState extends State<PlayerOnboardingPage> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final screen = MediaQuery.sizeOf(context);
-        final gifSize = (screen.shortestSide * 0.36).clamp(150.0, 250.0);
-        return Center(
+        final availableWidth = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : screen.width;
+        final availableHeight = constraints.maxHeight.isFinite
+            ? constraints.maxHeight
+            : screen.height * 0.45;
+
+        // Bigger onboarding character GIF that still scales down safely
+        // on small phones and web windows.
+        final gifSize = [
+          availableWidth * 0.68,
+          availableHeight * 0.92,
+          screen.shortestSide * 0.62,
+        ].reduce((a, b) => a < b ? a : b).clamp(230.0, 430.0);
+
+        return Align(
+          alignment: Alignment.bottomCenter,
           child: Container(
             width: gifSize,
             height: gifSize,
-            padding: const EdgeInsets.all(8),
+            padding: EdgeInsets.all((gifSize * 0.035).clamp(8.0, 16.0)),
             decoration: BoxDecoration(
               color: Colors.white.withValues(alpha: 0.55),
-              borderRadius: BorderRadius.circular(28),
+              borderRadius: BorderRadius.circular((gifSize * 0.12).clamp(28.0, 48.0)),
               border: Border.all(color: Colors.white70, width: 2),
               boxShadow: const [
                 BoxShadow(
                   color: Color(0x26000000),
-                  blurRadius: 14,
-                  offset: Offset(0, 8),
+                  blurRadius: 18,
+                  offset: Offset(0, 10),
                 ),
               ],
             ),
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(22),
+              borderRadius: BorderRadius.circular((gifSize * 0.09).clamp(22.0, 38.0)),
               child: Image.asset(
                 assetPath,
                 fit: BoxFit.contain,

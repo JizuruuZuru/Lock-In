@@ -11,6 +11,8 @@ class NumberPad extends StatelessWidget {
   final VoidCallback onSubmit;
   final bool isDisabled;
   final bool showSignToggle;
+  final bool showColonButton;
+  final bool showInputDisplay;
   final double? buttonSize;
   final double? spacing;
   final Alignment alignment;
@@ -24,6 +26,8 @@ class NumberPad extends StatelessWidget {
     required this.onSubmit,
     required this.isDisabled,
     this.showSignToggle = false,
+    this.showColonButton = false,
+    this.showInputDisplay = true,
     this.buttonSize,
     this.spacing,
     this.alignment = Alignment.center,
@@ -42,33 +46,62 @@ class NumberPad extends StatelessWidget {
         final maxAvailableHeight = constraints.maxHeight.isFinite
             ? constraints.maxHeight
             : fallbackSize;
-        final panelExtent = (panelSize ?? min(maxAvailableWidth, maxAvailableHeight))
-            .clamp(150.0, 560.0);
 
-        // No answer box here anymore. The answer is shown below the question,
-        // so the keypad can be more compact and the buttons can be larger.
-        final panelPadding = (panelExtent * 0.02).clamp(3.0, 10.0);
-        final effectiveSpacing = (spacing ?? (panelExtent * 0.012)).clamp(2.0, 7.0);
-        final bottomButtonCount = showSignToggle ? 4 : 3;
+        final double panelExtent =
+            (panelSize ?? min(maxAvailableWidth, maxAvailableHeight))
+                .clamp(150.0, 560.0)
+                .toDouble();
+
+        final double panelPadding =
+            (panelExtent * 0.045).clamp(10.0, 20.0).toDouble();
+        final double effectiveSpacing =
+            (spacing ?? (panelExtent * 0.025)).clamp(5.0, 12.0).toDouble();
+        final double answerHeight = showInputDisplay
+            ? (panelExtent * 0.17).clamp(46.0, 82.0).toDouble()
+            : 0.0;
+
+        final bottomButtons = <String>[
+          if (showSignToggle) '+/-',
+          'C',
+          '0',
+          if (showColonButton) ':',
+          '→',
+        ];
+        final bottomButtonCount = bottomButtons.length;
 
         final maxButtonByGridWidth =
             (panelExtent - (panelPadding * 2) - (effectiveSpacing * 2)) / 3;
         final maxButtonByBottomWidth =
-            (panelExtent - (panelPadding * 2) - (effectiveSpacing * (bottomButtonCount - 1))) /
+            (panelExtent -
+                    (panelPadding * 2) -
+                    (effectiveSpacing * (bottomButtonCount - 1))) /
                 bottomButtonCount;
+        final verticalSpacingCount = showInputDisplay ? 4 : 3;
         final maxButtonByHeight =
-            (panelExtent - (panelPadding * 2) - (effectiveSpacing * 3)) / 4;
+            (panelExtent -
+                    (panelPadding * 2) -
+                    answerHeight -
+                    (effectiveSpacing * verticalSpacingCount)) /
+                4;
 
-        final computedButtonSize = min(
-          buttonSize ?? 132.0,
-          min(maxButtonByGridWidth, min(maxButtonByBottomWidth, maxButtonByHeight)),
-        ).clamp(38.0, 158.0);
+        final double computedButtonSize = min(
+          buttonSize ?? 100.0,
+          min(
+            maxButtonByGridWidth,
+            min(maxButtonByBottomWidth, maxButtonByHeight),
+          ),
+        ).clamp(18.0, 116.0).toDouble();
 
         final gridWidth = computedButtonSize * 3 + effectiveSpacing * 2;
+        final gridHeight = computedButtonSize * 3 + effectiveSpacing * 2;
         final bottomRowWidth = computedButtonSize * bottomButtonCount +
             effectiveSpacing * (bottomButtonCount - 1);
-        final buttonFontSize = (computedButtonSize * 0.45).clamp(22.0, 48.0);
-        final actionFontSize = (computedButtonSize * 0.36).clamp(17.0, 36.0);
+        final double answerFontSize =
+            (computedButtonSize * 0.38).clamp(18.0, 34.0).toDouble();
+        final double buttonFontSize =
+            (computedButtonSize * 0.34).clamp(16.0, 34.0).toDouble();
+        final double actionFontSize =
+            (computedButtonSize * 0.27).clamp(14.0, 28.0).toDouble();
 
         return Align(
           alignment: alignment,
@@ -79,7 +112,9 @@ class NumberPad extends StatelessWidget {
               padding: EdgeInsets.all(panelPadding),
               decoration: BoxDecoration(
                 color: Colors.white.withValues(alpha: 0.86),
-                borderRadius: BorderRadius.circular((panelExtent * 0.065).clamp(18.0, 34.0)),
+                borderRadius: BorderRadius.circular(
+                  (panelExtent * 0.065).clamp(18.0, 34.0).toDouble(),
+                ),
                 border: Border.all(color: const Color(0x1F000000), width: 1.3),
                 boxShadow: const [
                   BoxShadow(
@@ -93,70 +128,80 @@ class NumberPad extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  _buttonRow(
-                    width: gridWidth,
-                    spacing: effectiveSpacing,
-                    buttonSize: computedButtonSize,
-                    buttons: [
-                      _uniformButton('1', computedButtonSize, fontSize: buttonFontSize),
-                      _uniformButton('2', computedButtonSize, fontSize: buttonFontSize),
-                      _uniformButton('3', computedButtonSize, fontSize: buttonFontSize),
-                    ],
-                  ),
-                  SizedBox(height: effectiveSpacing),
-                  _buttonRow(
-                    width: gridWidth,
-                    spacing: effectiveSpacing,
-                    buttonSize: computedButtonSize,
-                    buttons: [
-                      _uniformButton('4', computedButtonSize, fontSize: buttonFontSize),
-                      _uniformButton('5', computedButtonSize, fontSize: buttonFontSize),
-                      _uniformButton('6', computedButtonSize, fontSize: buttonFontSize),
-                    ],
-                  ),
-                  SizedBox(height: effectiveSpacing),
-                  _buttonRow(
-                    width: gridWidth,
-                    spacing: effectiveSpacing,
-                    buttonSize: computedButtonSize,
-                    buttons: [
-                      _uniformButton('7', computedButtonSize, fontSize: buttonFontSize),
-                      _uniformButton('8', computedButtonSize, fontSize: buttonFontSize),
-                      _uniformButton('9', computedButtonSize, fontSize: buttonFontSize),
-                    ],
-                  ),
-                  SizedBox(height: effectiveSpacing),
-                  _buttonRow(
-                    width: bottomRowWidth,
-                    spacing: effectiveSpacing,
-                    buttonSize: computedButtonSize,
-                    buttons: [
-                      if (showSignToggle)
-                        _uniformButton(
-                          '+/-',
-                          computedButtonSize,
-                          action: _toggleSign,
-                          fontSize: actionFontSize,
+                  if (showInputDisplay) ...[
+                    SizedBox(
+                      height: answerHeight,
+                      child: Container(
+                        width: double.infinity,
+                        alignment: Alignment.center,
+                        padding: EdgeInsets.symmetric(
+                          horizontal: (panelExtent * 0.035)
+                              .clamp(8.0, 16.0)
+                              .toDouble(),
                         ),
-                      _uniformButton(
-                        'C',
-                        computedButtonSize,
-                        action: onClear,
-                        fontSize: actionFontSize,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF5F7FB),
+                          borderRadius: BorderRadius.circular(
+                            (panelExtent * 0.045)
+                                .clamp(12.0, 22.0)
+                                .toDouble(),
+                          ),
+                          border: Border.all(color: const Color(0xFFD6DFEB)),
+                        ),
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            input.isEmpty ? 'Your Answer' : input,
+                            textAlign: TextAlign.center,
+                            maxLines: 1,
+                            style: TextStyle(
+                              fontSize: answerFontSize,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
                       ),
-                      _uniformButton(
-                        '0',
-                        computedButtonSize,
-                        action: () => onNumberTap('0'),
-                        fontSize: buttonFontSize,
-                      ),
-                      _uniformButton(
-                        '→',
-                        computedButtonSize,
-                        action: onSubmit,
-                        fontSize: actionFontSize,
-                      ),
-                    ],
+                    ),
+                    SizedBox(height: effectiveSpacing),
+                  ],
+                  SizedBox(
+                    width: gridWidth,
+                    height: gridHeight,
+                    child: GridView.count(
+                      crossAxisCount: 3,
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      mainAxisSpacing: effectiveSpacing,
+                      crossAxisSpacing: effectiveSpacing,
+                      childAspectRatio: 1.0,
+                      children: [
+                        for (var i = 1; i <= 9; i++)
+                          _uniformButton(
+                            i.toString(),
+                            computedButtonSize,
+                            fontSize: buttonFontSize,
+                          ),
+                      ],
+                    ),
+                  ),
+                  SizedBox(height: effectiveSpacing),
+                  SizedBox(
+                    width: bottomRowWidth,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        for (var index = 0; index < bottomButtons.length; index++) ...[
+                          _buttonForLabel(
+                            bottomButtons[index],
+                            computedButtonSize,
+                            buttonFontSize: buttonFontSize,
+                            actionFontSize: actionFontSize,
+                          ),
+                          if (index != bottomButtons.length - 1)
+                            SizedBox(width: effectiveSpacing),
+                        ],
+                      ],
+                    ),
                   ),
                 ],
               ),
@@ -167,25 +212,49 @@ class NumberPad extends StatelessWidget {
     );
   }
 
-  Widget _buttonRow({
-    required List<Widget> buttons,
-    required double width,
-    required double spacing,
-    required double buttonSize,
+  Widget _buttonForLabel(
+    String label,
+    double size, {
+    required double buttonFontSize,
+    required double actionFontSize,
   }) {
-    return SizedBox(
-      width: width,
-      height: buttonSize,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          for (int i = 0; i < buttons.length; i++) ...[
-            if (i > 0) SizedBox(width: spacing),
-            buttons[i],
-          ],
-        ],
-      ),
-    );
+    switch (label) {
+      case '+/-':
+        return _uniformButton(
+          label,
+          size,
+          action: _toggleSign,
+          fontSize: actionFontSize,
+        );
+      case 'C':
+        return _uniformButton(
+          label,
+          size,
+          action: onClear,
+          fontSize: actionFontSize,
+        );
+      case '→':
+        return _uniformButton(
+          label,
+          size,
+          action: onSubmit,
+          fontSize: actionFontSize,
+        );
+      case ':':
+        return _uniformButton(
+          label,
+          size,
+          action: () => onNumberTap(':'),
+          fontSize: buttonFontSize,
+        );
+      default:
+        return _uniformButton(
+          label,
+          size,
+          action: () => onNumberTap(label),
+          fontSize: buttonFontSize,
+        );
+    }
   }
 
   void _toggleSign() {
@@ -211,7 +280,9 @@ class NumberPad extends StatelessWidget {
           padding: EdgeInsets.zero,
           minimumSize: Size(size, size),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular((size * 0.22).clamp(10.0, 22.0)),
+            borderRadius: BorderRadius.circular(
+              (size * 0.22).clamp(10.0, 22.0).toDouble(),
+            ),
           ),
           textStyle: TextStyle(
             fontSize: fontSize,

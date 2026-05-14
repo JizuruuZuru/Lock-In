@@ -12,12 +12,11 @@ import '../widgets/animated_shape_background.dart';
 import '../widgets/correct_splash.dart';
 import '../widgets/game_over_popup.dart';
 import '../widgets/hearts_display.dart';
+import '../widgets/incorrect_splash.dart';
 import '../widgets/app_brightness_overlay.dart';
 import '../widgets/game_timer.dart';
 import '../widgets/leave_warning_overlay.dart';
 import '../widgets/number_pad.dart';
-import '../widgets/game_reaction_gif.dart';
-import '../widgets/incorrect_splash.dart';
 
 class NumberMemoryGame extends StatefulWidget {
   const NumberMemoryGame({super.key});
@@ -28,110 +27,11 @@ class NumberMemoryGame extends StatefulWidget {
 
 class _NumberMemoryGameState extends State<NumberMemoryGame>
     with WidgetsBindingObserver {
-
-ReactionGifState get _reactionState {
-  if (showCorrectSplash) return ReactionGifState.success;
-  if (showIncorrectSplash) return ReactionGifState.fail;
-  return ReactionGifState.thinking;
-}
-
-double _bottomControlGap(double availableWidth) {
-  if (availableWidth < 520) return 3;
-  if (availableWidth < 760) return 4;
-  return 8;
-}
-
-double _bottomControlSize(BoxConstraints constraints) {
-  final screenSize = MediaQuery.sizeOf(context);
-  final availableWidth = constraints.maxWidth.isFinite
-      ? constraints.maxWidth
-      : screenSize.width;
-  final availableHeight = constraints.maxHeight.isFinite
-      ? constraints.maxHeight
-      : screenSize.height * 0.42;
-  final gap = _bottomControlGap(availableWidth);
-  final widthBased = (availableWidth - gap) / 2;
-  final heightBased = availableHeight * 1.0;
-  return min(widthBased, heightBased).clamp(170.0, 560.0);
-}
-
-double _bottomButtonSize(double panelSize) {
-  // Larger keypad buttons while still fitting the input display and bottom row.
-  return ((panelSize - 36) / 4).clamp(34.0, 128.0);
-}
-
-double _reactionOnlySize(BoxConstraints constraints) {
-  final screenSize = MediaQuery.sizeOf(context);
-  final availableWidth = constraints.maxWidth.isFinite
-      ? constraints.maxWidth
-      : screenSize.width;
-  final availableHeight = constraints.maxHeight.isFinite
-      ? constraints.maxHeight
-      : screenSize.height;
-
-  // Bigger centered companion GIF. It scales down automatically on smaller screens.
-  return min(availableWidth * 0.72, availableHeight * 0.52).clamp(220.0, 520.0);
-}
-
-Widget _buildResponsiveBottomControls() {
-  return LayoutBuilder(
-    builder: (context, constraints) {
-      final panelSize = _bottomControlSize(constraints);
-      final gap = _bottomControlGap(constraints.maxWidth.isFinite
-          ? constraints.maxWidth
-          : MediaQuery.sizeOf(context).width);
-      final buttonSize = _bottomButtonSize(panelSize);
-
-      return Align(
-        alignment: Alignment.bottomCenter,
-        child: SingleChildScrollView(
-          physics: const NeverScrollableScrollPhysics(),
-          child: Wrap(
-            alignment: WrapAlignment.center,
-            crossAxisAlignment: WrapCrossAlignment.end,
-            spacing: gap,
-            runSpacing: 10,
-            children: [
-              SizedBox(
-                width: panelSize,
-                height: panelSize,
-                child: NumberPad(
-                  input: input,
-                  isDisabled: isGameOver,
-                  onNumberTap: appendInput,
-                  onClear: clearInput,
-                  onSubmit: submitInput,
-                  panelSize: panelSize,
-                  buttonSize: buttonSize,
-                  alignment: Alignment.bottomCenter,
-                ),
-              ),
-              SizedBox(
-                width: panelSize,
-                height: panelSize,
-                child: Align(
-                  alignment: Alignment.bottomCenter,
-                  child: GameReactionGif(
-                    state: _reactionState,
-                    size: panelSize,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    },
-  );
-}
-
   static const Color _inkColor = Color(0xFF1B4965);
   static const Color _bgTopColor = Color(0xFFFFE5D9);
   static const Color _bgBottomColor = Color(0xFFFFCCB3);
   static const Color _panelColor = Color(0xFFFFF9E6);
   static const Color _accentColor = Color(0xFF069A8E);
-  static const Duration _correctFeedbackDuration = Duration(milliseconds: 850);
-  static const Duration _incorrectFeedbackDuration = Duration(milliseconds: 2600);
   static const int _autoSubmitAfterLeaves = 1;
 
   int level = 1;
@@ -495,6 +395,21 @@ Widget _buildResponsiveBottomControls() {
     });
   }
 
+  bool _shouldConfirmExit() {
+    return _isRoundActive();
+  }
+
+  void _showExitConfirmationOverlay() {
+    if (_showExitConfirmation || !_shouldConfirmExit()) return;
+
+    unawaited(_stopFaceProctor());
+
+    setState(() {
+      _showExitConfirmation = true;
+      isGameOver = true;
+    });
+  }
+
   void _cancelExitConfirmation() {
     if (!_showExitConfirmation) return;
 
@@ -521,6 +436,12 @@ Widget _buildResponsiveBottomControls() {
       return;
     }
     SoundService().playButtonSoundNow();
+
+    if (_shouldConfirmExit()) {
+      _showExitConfirmationOverlay();
+      return;
+    }
+
     Navigator.of(context).maybePop();
   }
 
@@ -546,7 +467,7 @@ Widget _buildResponsiveBottomControls() {
         showCorrectSplash = true;
         isGameOver = true;
       });
-      Future.delayed(_correctFeedbackDuration, () {
+      Future.delayed(const Duration(milliseconds: 600), () {
         if (mounted) {
           setState(() {
             level++;
@@ -566,7 +487,7 @@ Widget _buildResponsiveBottomControls() {
       unawaited(saveScore().catchError((e) {
         debugPrint('Error saving score on incorrect: $e');
       }));
-      Future.delayed(_incorrectFeedbackDuration, () {
+      Future.delayed(const Duration(milliseconds: 600), () {
         if (mounted) {
           setState(() {
             showIncorrectSplash = false;
@@ -613,15 +534,9 @@ Widget _buildResponsiveBottomControls() {
           setState(() {
             level = 1;
             showNumber = true;
-            input = '';
-            number = '';
             timerKey = UniqueKey();
-            displayTimerKey = UniqueKey();
             hasStarted = false;
             hearts = 3;
-            isGameOver = false;
-            showCorrectSplash = false;
-            showIncorrectSplash = false;
           });
         },
       ),
@@ -678,6 +593,18 @@ Widget _buildResponsiveBottomControls() {
                   ),
                 ),
               ),
+              if (showCorrectSplash)
+                Positioned.fill(
+                  child: CorrectSplash(
+                    onComplete: () {},
+                  ),
+                ),
+              if (showIncorrectSplash)
+                Positioned.fill(
+                  child: IncorrectSplash(
+                    onComplete: () {},
+                  ),
+                ),
               if (_showExitConfirmation)
                 Positioned.fill(
                   child: LeaveWarningOverlay(
@@ -697,22 +624,6 @@ Widget _buildResponsiveBottomControls() {
                     isBusy: _processingLeaveAttempt,
                     onOk: _restartFromLeaveWarning,
                     onBack: _backFromLeaveWarning,
-                  ),
-                ),
-              if (showCorrectSplash)
-                const Positioned.fill(
-                  child: IgnorePointer(
-                    child: CorrectSplash(
-                      duration: _correctFeedbackDuration,
-                    ),
-                  ),
-                ),
-              if (showIncorrectSplash)
-                const Positioned.fill(
-                  child: IgnorePointer(
-                    child: IncorrectSplash(
-                      duration: _incorrectFeedbackDuration,
-                    ),
                   ),
                 ),
             ],
@@ -890,56 +801,6 @@ Widget _buildResponsiveBottomControls() {
     );
   }
 
-
-  Widget _buildInlineAnswerBox() {
-    final displayText = input.isEmpty ? 'Your Answer' : input;
-    final isPlaceholder = input.isEmpty;
-
-    return Center(
-      child: Container(
-        constraints: const BoxConstraints(
-          minWidth: 210,
-          maxWidth: 340,
-          minHeight: 52,
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.95),
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: isPlaceholder
-                ? const Color(0xFFD6DFEB)
-                : _accentColor.withValues(alpha: 0.75),
-            width: 2,
-          ),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x14000000),
-              blurRadius: 10,
-              offset: Offset(0, 4),
-            ),
-          ],
-        ),
-        child: FittedBox(
-          fit: BoxFit.scaleDown,
-          child: Text(
-            displayText,
-            textAlign: TextAlign.center,
-            maxLines: 1,
-            style: TextStyle(
-              fontSize: isPlaceholder ? 20 : 28,
-              fontWeight: FontWeight.w900,
-              color: isPlaceholder
-                  ? const Color(0xFF6B7280)
-                  : const Color(0xFF1B4965),
-              letterSpacing: isPlaceholder ? 0 : 1.2,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
   Widget _buildInstructions() {
     return Center(
       child: ConstrainedBox(
@@ -979,215 +840,151 @@ Widget _buildResponsiveBottomControls() {
   }
 
   Widget _buildGameUI() {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final isCompact = constraints.maxHeight < 680 || constraints.maxWidth < 430;
-        final sectionGap = isCompact ? 8.0 : 12.0;
-        final cardPadding = EdgeInsets.symmetric(
-          horizontal: isCompact ? 12 : 16,
-          vertical: isCompact ? 10 : 14,
-        );
-        final titleSize = isCompact ? 20.0 : 24.0;
-        final promptSize = isCompact ? 15.0 : 17.0;
-        final numberSize = isCompact ? 38.0 : 48.0;
-
-        return Column(
-          children: [
-            _card(
-              padding: cardPadding,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    'Level $level',
-                    style: TextStyle(
-                      fontSize: titleSize,
-                      fontWeight: FontWeight.w900,
+    return Column(
+      children: [
+        _card(
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Level $level',
+                style: const TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              if (!showNumber)
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.only(left: 16),
+                    child: GameTimer(
+                      key: timerKey,
+                      seconds: maxTime,
+                      isPaused: () => isGameOver,
+                      onTimeUp: () {
+                        setState(() {
+                          isGameOver = true;
+                        });
+                        unawaited(_stopFaceProctor());
+                        unawaited(saveScore().catchError((e) {
+                          debugPrint('Error saving score on timeout: $e');
+                        }));
+                        showGameOverScreen('', timeout: true);
+                      },
+                      showBar: true,
                     ),
                   ),
-                  if (!showNumber)
-                    Expanded(
-                      child: Padding(
-                        padding: EdgeInsets.only(left: isCompact ? 10 : 14),
-                        child: GameTimer(
-                          key: timerKey,
-                          seconds: maxTime,
-                          isPaused: () => isGameOver,
-                          onTimeUp: () {
-                            setState(() {
-                              isGameOver = true;
-                            });
-                            unawaited(_stopFaceProctor());
-                            unawaited(saveScore().catchError((e) {
-                              debugPrint('Error saving score on timeout: $e');
-                            }));
-                            showGameOverScreen('', timeout: true);
-                          },
-                          showBar: true,
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            SizedBox(height: sectionGap),
-            if (!showNumber) HeartsDisplay(hearts: hearts),
-            if (!showNumber) SizedBox(height: sectionGap),
-            if (showNumber)
-              Expanded(
-                child: LayoutBuilder(
-                  builder: (context, innerConstraints) {
-                    final gifSize = _reactionOnlySize(innerConstraints);
-                    return Column(
-                      children: [
-                        Flexible(
-                          flex: isCompact ? 4 : 5,
-                          child: Center(
-                            child: _card(
-                              padding: EdgeInsets.fromLTRB(
-                                isCompact ? 14 : 20,
-                                isCompact ? 10 : 14,
-                                isCompact ? 14 : 20,
-                                isCompact ? 14 : 20,
-                              ),
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Align(
-                                    alignment: Alignment.centerRight,
-                                    child: IconButton(
-                                      visualDensity: VisualDensity.compact,
-                                      padding: EdgeInsets.zero,
-                                      constraints: const BoxConstraints(
-                                        minWidth: 36,
-                                        minHeight: 36,
-                                      ),
-                                      onPressed: null,
-                                      icon: const Icon(Icons.record_voice_over_rounded),
-                                      tooltip: 'Replay number voice',
-                                    ),
-                                  ),
-                                  FittedBox(
-                                    fit: BoxFit.scaleDown,
-                                    child: Text(
-                                      number,
-                                      style: TextStyle(
-                                        fontSize: numberSize,
-                                        fontWeight: FontWeight.w900,
-                                        letterSpacing: isCompact ? 5 : 8,
-                                      ),
-                                      textAlign: TextAlign.center,
-                                    ),
-                                  ),
-                                  SizedBox(height: isCompact ? 14 : 20),
-                                  SizedBox(
-                                    width: double.infinity,
-                                    child: GameTimer(
-                                      key: displayTimerKey,
-                                      seconds: displayTime,
-                                      isPaused: () => isGameOver,
-                                      onTimeUp: () {},
-                                      showBar: true,
-                                    ),
-                                  ),
-                                  SizedBox(height: isCompact ? 12 : 16),
-                                  SizedBox(
-                                    width: double.infinity,
-                                    child: ElevatedButton.icon(
-                                      onPressed: skipToAnswerPhase,
-                                      icon: const Icon(Icons.keyboard_arrow_right_rounded, size: 22),
-                                      label: const Text('Start Answering'),
-                                      style: ElevatedButton.styleFrom(
-                                        minimumSize: Size.fromHeight(isCompact ? 44 : 50),
-                                        backgroundColor: _accentColor,
-                                        foregroundColor: Colors.white,
-                                        padding: EdgeInsets.symmetric(
-                                          horizontal: isCompact ? 14 : 18,
-                                          vertical: isCompact ? 10 : 13,
-                                        ),
-                                        textStyle: TextStyle(
-                                          fontSize: isCompact ? 14 : 16,
-                                          fontWeight: FontWeight.w800,
-                                          letterSpacing: 0.4,
-                                        ),
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(16),
-                                        ),
-                                        elevation: 0,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                        SizedBox(height: sectionGap),
-                        Flexible(
-                          flex: isCompact ? 3 : 4,
-                          child: Center(
-                            child: GameReactionGif(
-                              state: _reactionState,
-                              size: gifSize,
-                            ),
-                          ),
-                        ),
-                      ],
-                    );
-                  },
                 ),
-              )
-            else
-              Expanded(
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        if (!showNumber) HeartsDisplay(hearts: hearts),
+        if (!showNumber) const SizedBox(height: 14),
+        if (showNumber)
+          Expanded(
+            child: Center(
+              child: _card(
+                padding: const EdgeInsets.fromLTRB(28, 20, 28, 34),
                 child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    _card(
-                      padding: cardPadding,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  'Enter the number you saw',
-                                  style: TextStyle(
-                                    fontSize: promptSize,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                  textAlign: TextAlign.center,
-                                ),
-                              ),
-                              IconButton(
-                                visualDensity: VisualDensity.compact,
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints(
-                                  minWidth: 36,
-                                  minHeight: 36,
-                                ),
-                                onPressed: null,
-                                icon: const Icon(Icons.volume_up_rounded),
-                                tooltip: 'Replay prompt',
-                              ),
-                            ],
-                          ),
-                          SizedBox(height: isCompact ? 8 : 12),
-                          _buildInlineAnswerBox(),
-                        ],
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: IconButton(
+                        onPressed: null,
+                        icon: const Icon(Icons.record_voice_over_rounded),
+                        tooltip: 'Replay number voice',
                       ),
                     ),
-                    SizedBox(height: sectionGap),
-                    Expanded(
-                      child: _buildResponsiveBottomControls(),
+                    Text(
+                      number,
+                      style: const TextStyle(
+                        fontSize: 48,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 8,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 24),
+                    SizedBox(
+                      width: double.infinity,
+                      child: GameTimer(
+                        key: displayTimerKey,
+                        seconds: displayTime,
+                        isPaused: () => isGameOver,
+                        onTimeUp: () {},
+                        showBar: true,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: skipToAnswerPhase,
+                        icon: const Icon(Icons.keyboard_arrow_right_rounded, size: 24),
+                        label: const Text('Start Answering'),
+                        style: ElevatedButton.styleFrom(
+                          minimumSize: const Size.fromHeight(52),
+                          backgroundColor: _accentColor,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                          textStyle: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.5,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(18),
+                          ),
+                          elevation: 0,
+                        ),
+                      ),
                     ),
                   ],
                 ),
               ),
-          ],
-        );
-      },
+            ),
+          )
+        else
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                _card(
+                  child: Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          "Enter the number you saw",
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: null,
+                        icon: const Icon(Icons.volume_up_rounded),
+                        tooltip: 'Replay prompt',
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: NumberPad(
+                    input: input,
+                    isDisabled: isGameOver,
+                    onNumberTap: appendInput,
+                    onClear: clearInput,
+                    onSubmit: submitInput,
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
     );
   }
-
 }

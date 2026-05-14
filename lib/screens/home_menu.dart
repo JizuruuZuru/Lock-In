@@ -5,6 +5,14 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'math_game.dart';
 import 'number_memory_game.dart';
+import 'roman_numerals_game.dart';
+import 'analog_clock_game.dart';
+import 'place_value_game.dart';
+import 'rounding_numbers_game.dart';
+import 'order_operations_game.dart';
+import 'fractions_game.dart';
+import 'measurements_game.dart';
+import 'exam_game.dart';
 import 'register_page.dart';
 import 'login_page.dart';
 import 'leaderboard_screen.dart';
@@ -12,7 +20,33 @@ import '../services/app_settings_service.dart';
 import '../services/sound_service.dart';
 import '../widgets/app_brightness_overlay.dart';
 import '../widgets/animated_shape_background.dart';
-import '../onboarding_gate.dart';
+
+
+class _HomeGameItem {
+  final String name;
+  final IconData icon;
+  final Widget widget;
+  final String subtitle;
+
+  const _HomeGameItem({
+    required this.name,
+    required this.icon,
+    required this.widget,
+    required this.subtitle,
+  });
+}
+
+class _ExamMenuItem {
+  final ExamDifficulty difficulty;
+  final String title;
+  final String subtitle;
+
+  const _ExamMenuItem({
+    required this.difficulty,
+    required this.title,
+    required this.subtitle,
+  });
+}
 
 class HomeMenu extends StatefulWidget {
   const HomeMenu({super.key});
@@ -33,6 +67,8 @@ class _HomeMenuState extends State<HomeMenu> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   User? user;
   Map<String, dynamic>? userData;
+  int? _selectedLessonIndex;
+  ExamDifficulty? _selectedExamDifficulty;
 
   @override
   void initState() {
@@ -91,7 +127,7 @@ class _HomeMenuState extends State<HomeMenu> {
                       children: [
                         Container(
                           decoration: BoxDecoration(
-                            color: _accentColor.withValues(alpha: 0.15),
+                            color: _accentColor.withOpacity(0.15),
                             borderRadius: BorderRadius.circular(10),
                           ),
                           padding: const EdgeInsets.all(6),
@@ -200,7 +236,7 @@ class _HomeMenuState extends State<HomeMenu> {
                   children: [
                     Container(
                       decoration: BoxDecoration(
-                        color: const Color(0xFFD84315).withValues(alpha: 0.15),
+                        color: const Color(0xFFD84315).withOpacity(0.15),
                         borderRadius: BorderRadius.circular(10),
                       ),
                       padding: const EdgeInsets.all(6),
@@ -412,39 +448,6 @@ class _HomeMenuState extends State<HomeMenu> {
     );
   }
 
-
-  String _playerDisplayName() {
-    final fullName = (userData?['fullName'] ?? '').toString().trim();
-    if (fullName.isNotEmpty) return fullName;
-
-    final firstName = (userData?['firstName'] ?? '').toString().trim();
-    final lastName = (userData?['lastName'] ?? '').toString().trim();
-    final combinedName = '$firstName $lastName'.trim();
-    if (combinedName.isNotEmpty) return combinedName;
-
-    final username = (userData?['username'] ?? '').toString().trim();
-    if (username.isNotEmpty) return username;
-
-    final authName = user?.displayName?.trim();
-    if (authName != null && authName.isNotEmpty) return authName;
-
-    return 'Player';
-  }
-
-  String _playerSubtitle() {
-    final age = userData?['age'];
-    final loginId = (userData?['loginId'] ?? '').toString().trim();
-    if (user?.isAnonymous == true) {
-      if (age != null) return 'Age: $age • temporary player profile';
-      return 'Temporary player profile saved in Firebase';
-    }
-    if (loginId.isNotEmpty) return 'Login: $loginId';
-    final email = user?.email;
-    if (email != null && email.trim().isNotEmpty) return email;
-    if (age != null) return 'Age: $age';
-    return 'Profile ready';
-  }
-
   String _formatTimestamp(Timestamp? timestamp) {
     if (timestamp == null) return '-';
     final dt = timestamp.toDate().toLocal();
@@ -541,7 +544,7 @@ class _HomeMenuState extends State<HomeMenu> {
                 padding: const EdgeInsets.symmetric(
                     horizontal: 12, vertical: 10),
                 decoration: BoxDecoration(
-                  color: rankColors[rank].withValues(alpha: 0.45),
+                  color: rankColors[rank].withOpacity(0.45),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
                     color: rankInkColors[rank],
@@ -732,16 +735,16 @@ class _HomeMenuState extends State<HomeMenu> {
           margin: const EdgeInsets.symmetric(horizontal: 6),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
           decoration: BoxDecoration(
-            color: isActive ? _accentColor.withValues(alpha: 0.2) : _panelColor,
+            color: isActive ? _accentColor.withOpacity(0.2) : _panelColor,
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
-              color: isActive ? _accentColor : _inkColor.withValues(alpha: 0.2),
+              color: isActive ? _accentColor : _inkColor.withOpacity(0.2),
               width: isActive ? 2.2 : 2,
             ),
             boxShadow: isActive
                 ? [
                     BoxShadow(
-                      color: _accentColor.withValues(alpha: 0.3),
+                      color: _accentColor.withOpacity(0.3),
                       offset: const Offset(2, 3),
                       blurRadius: 0,
                     ),
@@ -773,19 +776,154 @@ class _HomeMenuState extends State<HomeMenu> {
     );
   }
 
+
+  List<_HomeGameItem> get _lessonGames => const [
+        _HomeGameItem(
+          name: 'Math Game',
+          icon: Icons.calculate,
+          widget: MathGame(),
+          subtitle: 'Addition, subtraction, multiplication, and division drills.',
+        ),
+        _HomeGameItem(
+          name: 'Number Memory',
+          icon: Icons.memory,
+          widget: NumberMemoryGame(),
+          subtitle: 'Remember and type the number sequence correctly.',
+        ),
+        _HomeGameItem(
+          name: 'Roman Numerals',
+          icon: Icons.format_list_numbered_rounded,
+          widget: RomanNumeralsGame(),
+          subtitle: 'Practice Roman numerals and number conversion.',
+        ),
+        _HomeGameItem(
+          name: 'Analog Clock',
+          icon: Icons.schedule_rounded,
+          widget: AnalogClockGame(),
+          subtitle: 'Read analog clocks and enter the correct time.',
+        ),
+        _HomeGameItem(
+          name: 'Place Value',
+          icon: Icons.view_week_rounded,
+          widget: PlaceValueGame(),
+          subtitle: 'Build numbers and find missing place values.',
+        ),
+        _HomeGameItem(
+          name: 'Rounding Numbers',
+          icon: Icons.exposure_plus_1_rounded,
+          widget: RoundingNumbersGame(),
+          subtitle: 'Round numbers to tens, hundreds, and thousands.',
+        ),
+        _HomeGameItem(
+          name: 'Order of Operations',
+          icon: Icons.functions_rounded,
+          widget: OrderOperationsGame(),
+          subtitle: 'Solve expressions using the correct operation order.',
+        ),
+        _HomeGameItem(
+          name: 'Fractions',
+          icon: Icons.splitscreen_rounded,
+          widget: FractionsGame(),
+          subtitle: 'Compare, simplify, convert, add, and subtract fractions.',
+        ),
+        _HomeGameItem(
+          name: 'Measurements',
+          icon: Icons.straighten_rounded,
+          widget: MeasurementsGame(),
+          subtitle: 'Practice length, weight, capacity, and temperature conversions.',
+        ),
+      ];
+
+  List<_ExamMenuItem> get _examItems => const [
+        _ExamMenuItem(
+          difficulty: ExamDifficulty.easy,
+          title: 'Easy',
+          subtitle: 'Addition, subtraction, Roman numerals, and place value.',
+        ),
+        _ExamMenuItem(
+          difficulty: ExamDifficulty.medium,
+          title: 'Medium',
+          subtitle: 'Multiplication, division, rounding numbers, and analog clock.',
+        ),
+        _ExamMenuItem(
+          difficulty: ExamDifficulty.hard,
+          title: 'Hard',
+          subtitle: 'Order of operations, fractions, and measurements.',
+        ),
+      ];
+
+  InputDecoration _dropdownDecoration(String hint) {
+    return InputDecoration(
+      hintText: hint,
+      filled: true,
+      fillColor: Colors.white,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: const BorderSide(color: _inkColor, width: 2),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: const BorderSide(color: _accentColor, width: 2.6),
+      ),
+    );
+  }
+
+  void _openGame(Widget page) {
+    SoundService().playButtonSoundNow();
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => page),
+    );
+  }
+
+  Widget _sectionLabel({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(9),
+          decoration: BoxDecoration(
+            color: _accentColor.withOpacity(0.14),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: _accentColor.withOpacity(0.28), width: 1.6),
+          ),
+          child: Icon(icon, color: _accentColor, size: 26),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                subtitle,
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildHome() {
-    final games = [
-      {
-        'name': 'Math Game',
-        'icon': Icons.calculate,
-        'widget': const MathGame()
-      },
-      {
-        'name': 'Number Memory',
-        'icon': Icons.memory,
-        'widget': const NumberMemoryGame()
-      },
-    ];
+    final lessonGames = _lessonGames;
+    final examItems = _examItems;
+    final selectedLesson = _selectedLessonIndex == null
+        ? null
+        : lessonGames[_selectedLessonIndex!];
+    final selectedExam = _selectedExamDifficulty == null
+        ? null
+        : examItems.firstWhere((item) => item.difficulty == _selectedExamDifficulty);
 
     return SafeArea(
       child: ListView(
@@ -801,45 +939,158 @@ class _HomeMenuState extends State<HomeMenu> {
                 ),
                 SizedBox(height: 8),
                 Text(
-                  'Pick a game and start improving your mind.',
+                  'Choose a Lesson for focused practice or take a randomized Exam.',
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                 ),
               ],
             ),
           ),
           const SizedBox(height: 16),
-          ...games.asMap().entries.map((entry) {
+          _card(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _sectionLabel(
+                  icon: Icons.school_rounded,
+                  title: 'Lesson',
+                  subtitle: 'All specific subjects are here.',
+                ),
+                const SizedBox(height: 14),
+                DropdownButtonFormField<int>(
+                  value: _selectedLessonIndex,
+                  isExpanded: true,
+                  decoration: _dropdownDecoration('Select a lesson subject'),
+                  dropdownColor: _panelColor,
+                  items: List.generate(lessonGames.length, (index) {
+                    final game = lessonGames[index];
+                    return DropdownMenuItem<int>(
+                      value: index,
+                      child: Row(
+                        children: [
+                          Icon(game.icon, size: 20, color: _accentColor),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              game.name,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontWeight: FontWeight.w800),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
+                  onChanged: (value) {
+                    SoundService().playButtonSoundNow();
+                    setState(() => _selectedLessonIndex = value);
+                  },
+                ),
+                if (selectedLesson != null) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    selectedLesson.subtitle,
+                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                  ),
+                ],
+                const SizedBox(height: 14),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: selectedLesson == null
+                        ? null
+                        : () => _openGame(selectedLesson.widget),
+                    icon: const Icon(Icons.play_arrow_rounded),
+                    label: const Text('Start Lesson'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          _card(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _sectionLabel(
+                  icon: Icons.quiz_rounded,
+                  title: 'Exam',
+                  subtitle: 'Random questions based on the selected difficulty.',
+                ),
+                const SizedBox(height: 14),
+                DropdownButtonFormField<ExamDifficulty>(
+                  value: _selectedExamDifficulty,
+                  isExpanded: true,
+                  decoration: _dropdownDecoration('Select Easy, Medium, or Hard'),
+                  dropdownColor: _panelColor,
+                  items: examItems.map((item) {
+                    return DropdownMenuItem<ExamDifficulty>(
+                      value: item.difficulty,
+                      child: Text(
+                        item.title,
+                        style: const TextStyle(fontWeight: FontWeight.w900),
+                      ),
+                    );
+                  }).toList(),
+                  onChanged: (value) {
+                    SoundService().playButtonSoundNow();
+                    setState(() => _selectedExamDifficulty = value);
+                  },
+                ),
+                if (selectedExam != null) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    selectedExam.subtitle,
+                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                  ),
+                ],
+                const SizedBox(height: 14),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: selectedExam == null
+                        ? null
+                        : () => _openGame(ExamGame(difficulty: selectedExam.difficulty)),
+                    icon: const Icon(Icons.shuffle_rounded),
+                    label: Text(selectedExam == null
+                        ? 'Start Exam'
+                        : 'Start ${selectedExam.title} Exam'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          const Padding(
+            padding: EdgeInsets.only(left: 4, bottom: 6),
+            child: Text(
+              'All Lessons',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+            ),
+          ),
+          ...lessonGames.asMap().entries.map((entry) {
             final index = entry.key;
             final game = entry.value;
             return Padding(
               padding: const EdgeInsets.symmetric(vertical: 6),
               child: Transform.rotate(
-                angle: index.isEven ? -0.01 : 0.01,
+                angle: index.isEven ? -0.006 : 0.006,
                 child: _card(
                   padding: const EdgeInsets.all(14),
                   child: ListTile(
-                    leading: Icon(
-                      game['icon'] as IconData,
-                      size: 32,
-                      color: _accentColor,
-                    ),
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(game.icon, size: 32, color: _accentColor),
                     title: Text(
-                      game['name'] as String,
-                      style: const TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w800,
-                      ),
+                      game.name,
+                      style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+                    ),
+                    subtitle: Text(
+                      game.subtitle,
+                      style: const TextStyle(fontWeight: FontWeight.w600),
                     ),
                     trailing: const Icon(Icons.arrow_forward),
-                    onTap: () {
-                      SoundService().playButtonSoundNow();
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => game['widget'] as Widget,
-                        ),
-                      );
-                    },
+                    onTap: () => _openGame(game.widget),
                   ),
                 ),
               ),
@@ -851,7 +1102,7 @@ class _HomeMenuState extends State<HomeMenu> {
   }
 
   Widget _buildHistories() {
-    final displayName = _playerDisplayName();
+    final displayName = userData?['username'] ?? 'Guest User';
     final joinedTime = userData?['joinedAt'] != null
         ? DateTime.parse(userData!['joinedAt'])
         : null;
@@ -993,7 +1244,7 @@ class _HomeMenuState extends State<HomeMenu> {
                                             ),
                                             decoration: BoxDecoration(
                                               color: _accentColor
-                                                  .withValues(alpha: 0.15),
+                                                  .withOpacity(0.15),
                                               borderRadius:
                                                   BorderRadius.circular(12),
                                               border: Border.all(
@@ -1155,8 +1406,8 @@ class _HomeMenuState extends State<HomeMenu> {
   }
 
   Widget _buildSettings() {
-    final displayName = _playerDisplayName();
-    final email = _playerSubtitle();
+    final displayName = userData?['username'] ?? 'Guest User';
+    final email = user?.email ?? 'Not logged in';
 
     return SafeArea(
       child: Center(
@@ -1181,7 +1432,7 @@ class _HomeMenuState extends State<HomeMenu> {
                       vertical: 12,
                     ),
                     decoration: BoxDecoration(
-                      color: _accentColor.withValues(alpha: 0.1),
+                      color: _accentColor.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(color: _accentColor, width: 2),
                     ),
@@ -1209,68 +1460,6 @@ class _HomeMenuState extends State<HomeMenu> {
                   if (user != null)
                     Column(
                       children: [
-                        if (user!.isAnonymous) ...[
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(14),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFFFFBEE),
-                              borderRadius: BorderRadius.circular(14),
-                              border: Border.all(color: _accentColor, width: 2),
-                            ),
-                            child: const Text(
-                              'Secure your player profile: use your first name + last name as your login credential and set a password.',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w700,
-                                height: 1.3,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          SizedBox(
-                            width: double.infinity,
-                            child: ElevatedButton(
-                              onPressed: () async {
-                                SoundService().playButtonSoundNow();
-                                final result = await Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => const RegisterScreen(),
-                                  ),
-                                );
-                                if (result == true && mounted) {
-                                  await fetchUserData();
-                                }
-                              },
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF4CAF50),
-                              ),
-                              child: const Text('Create Account'),
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          SizedBox(
-                            width: double.infinity,
-                            child: ElevatedButton(
-                              onPressed: () async {
-                                SoundService().playButtonSoundNow();
-                                final result = await Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => const LoginPage(),
-                                  ),
-                                );
-                                if (result == true && mounted) {
-                                  await fetchUserData();
-                                }
-                              },
-                              child: const Text('Login Existing Account'),
-                            ),
-                          ),
-                          const SizedBox(height: 24),
-                        ],
                         SizedBox(
                           width: double.infinity,
                           child: ElevatedButton(
@@ -1288,12 +1477,10 @@ class _HomeMenuState extends State<HomeMenu> {
                               if (shouldSignOut == true) {
                                 await _auth.signOut();
                                 if (mounted) {
-                                  Navigator.of(context).pushAndRemoveUntil(
-                                    MaterialPageRoute(
-                                      builder: (_) => const OnboardingGate(),
-                                    ),
-                                    (route) => false,
-                                  );
+                                  setState(() {
+                                    user = null;
+                                    userData = null;
+                                  });
                                 }
                               }
                             },
@@ -1338,7 +1525,7 @@ class _HomeMenuState extends State<HomeMenu> {
                     Column(
                       children: [
                         const Text(
-                          'Set up your player profile to save history.',
+                          'You are a Guest User.',
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w600,

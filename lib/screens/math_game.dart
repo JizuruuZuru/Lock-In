@@ -21,7 +21,6 @@ import '../widgets/app_brightness_overlay.dart';
 import '../widgets/game_timer.dart';
 import '../widgets/leave_warning_overlay.dart';
 import '../widgets/number_pad.dart';
-import '../widgets/game_reaction_gif.dart';
 
 enum MathMode { add, subtract, multiply, divide, random }
 
@@ -33,93 +32,11 @@ class MathGame extends StatefulWidget {
 }
 
 class _MathGameState extends State<MathGame> with WidgetsBindingObserver {
-
-ReactionGifState get _reactionState {
-  if (showCorrectSplash) return ReactionGifState.success;
-  if (showIncorrectSplash) return ReactionGifState.fail;
-  return ReactionGifState.thinking;
-}
-
-double _bottomControlGap(double availableWidth) {
-  if (availableWidth < 520) return 6;
-  if (availableWidth < 760) return 10;
-  return 14;
-}
-
-double _bottomControlSize(BoxConstraints constraints) {
-  final screenSize = MediaQuery.sizeOf(context);
-  final availableWidth = constraints.maxWidth.isFinite
-      ? constraints.maxWidth
-      : screenSize.width;
-  final availableHeight = constraints.maxHeight.isFinite
-      ? constraints.maxHeight
-      : screenSize.height * 0.42;
-  final gap = _bottomControlGap(availableWidth);
-  final widthBased = (availableWidth - gap) / 2;
-  final heightBased = availableHeight * 0.98;
-  return min(widthBased, heightBased).clamp(150.0, 540.0);
-}
-
-double _bottomButtonSize(double panelSize) {
-  return ((panelSize - 36) / 4).clamp(34.0, 128.0);
-}
-
-Widget _buildResponsiveBottomControls({required bool showSignToggle}) {
-  return LayoutBuilder(
-    builder: (context, constraints) {
-      final panelSize = _bottomControlSize(constraints);
-      final gap = _bottomControlGap(constraints.maxWidth.isFinite
-          ? constraints.maxWidth
-          : MediaQuery.sizeOf(context).width);
-      final buttonSize = _bottomButtonSize(panelSize);
-
-      return Align(
-        alignment: Alignment.bottomCenter,
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            SizedBox(
-              width: panelSize,
-              height: panelSize,
-              child: NumberPad(
-                input: input,
-                isDisabled: isGameOver,
-                onNumberTap: appendInput,
-                onClear: clearInput,
-                onSubmit: submitInput,
-                showSignToggle: showSignToggle,
-                panelSize: panelSize,
-                buttonSize: buttonSize,
-                alignment: Alignment.bottomLeft,
-              ),
-            ),
-            SizedBox(width: gap),
-            SizedBox(
-              width: panelSize,
-              height: panelSize,
-              child: Align(
-                alignment: Alignment.bottomRight,
-                child: GameReactionGif(
-                  state: _reactionState,
-                  size: panelSize,
-                ),
-              ),
-            ),
-          ],
-        ),
-      );
-    },
-  );
-}
-
   static const Color _inkColor = Color(0xFF2C1B47);
   static const Color _bgTopColor = Color(0xFFFFF4E6);
   static const Color _bgBottomColor = Color(0xFFFFE0D6);
   static const Color _panelColor = Color(0xFFF0F8FF);
   static const Color _accentColor = Color(0xFF9C27B0);
-  static const Duration _correctFeedbackDuration = Duration(milliseconds: 850);
-  static const Duration _incorrectFeedbackDuration = Duration(milliseconds: 1450);
   static const int _autoSubmitAfterLeaves = 1;
 
   MathMode? selectedMode;
@@ -513,7 +430,6 @@ Widget _buildResponsiveBottomControls({required bool showSignToggle}) {
     Navigator.of(context).maybePop();
   }
 
-
   String modeDisplayName(MathMode mode) {
     switch (mode) {
       case MathMode.add:
@@ -756,7 +672,7 @@ Widget _buildResponsiveBottomControls({required bool showSignToggle}) {
         showCorrectSplash = true;
         isGameOver = true;
       });
-      Future.delayed(_correctFeedbackDuration, () {
+      Future.delayed(const Duration(milliseconds: 600), () {
         if (mounted) {
           setState(() {
             score++;
@@ -782,7 +698,7 @@ Widget _buildResponsiveBottomControls({required bool showSignToggle}) {
       debugPrint('Error saving score on incorrect: $e');
     }));
 
-    Future.delayed(_incorrectFeedbackDuration, () {
+    Future.delayed(const Duration(milliseconds: 600), () {
       if (mounted) {
         setState(() {
           showIncorrectSplash = false;
@@ -943,6 +859,18 @@ Widget _buildResponsiveBottomControls({required bool showSignToggle}) {
                   ),
                 ),
               ),
+              if (showCorrectSplash)
+                Positioned.fill(
+                  child: CorrectSplash(
+                    onComplete: () {},
+                  ),
+                ),
+              if (showIncorrectSplash)
+                Positioned.fill(
+                  child: IncorrectSplash(
+                    onComplete: () {},
+                  ),
+                ),
               if (_showExitConfirmation)
                 Positioned.fill(
                   child: LeaveWarningOverlay(
@@ -962,23 +890,6 @@ Widget _buildResponsiveBottomControls({required bool showSignToggle}) {
                     isBusy: _processingLeaveAttempt,
                     onOk: _restartFromLeaveWarning,
                     onBack: _backFromLeaveWarning,
-                  ),
-                ),
-
-              if (showCorrectSplash)
-                const Positioned.fill(
-                  child: IgnorePointer(
-                    child: CorrectSplash(
-                      duration: _correctFeedbackDuration,
-                    ),
-                  ),
-                ),
-              if (showIncorrectSplash)
-                const Positioned.fill(
-                  child: IgnorePointer(
-                    child: IncorrectSplash(
-                      duration: _incorrectFeedbackDuration,
-                    ),
                   ),
                 ),
             ],
@@ -1140,56 +1051,6 @@ Widget _buildResponsiveBottomControls({required bool showSignToggle}) {
         ],
       ),
       child: child,
-    );
-  }
-
-
-  Widget _buildInlineAnswerBox() {
-    final displayText = input.isEmpty ? 'Your Answer' : input;
-    final isPlaceholder = input.isEmpty;
-
-    return Center(
-      child: Container(
-        constraints: const BoxConstraints(
-          minWidth: 210,
-          maxWidth: 340,
-          minHeight: 54,
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.95),
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: isPlaceholder
-                ? const Color(0xFFD6DFEB)
-                : _accentColor.withValues(alpha: 0.75),
-            width: 2,
-          ),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x14000000),
-              blurRadius: 10,
-              offset: Offset(0, 4),
-            ),
-          ],
-        ),
-        child: FittedBox(
-          fit: BoxFit.scaleDown,
-          child: Text(
-            displayText,
-            textAlign: TextAlign.center,
-            maxLines: 1,
-            style: TextStyle(
-              fontSize: isPlaceholder ? 20 : 28,
-              fontWeight: FontWeight.w900,
-              color: isPlaceholder
-                  ? const Color(0xFF6B7280)
-                  : const Color(0xFF2C1B47),
-              letterSpacing: isPlaceholder ? 0 : 1.2,
-            ),
-          ),
-        ),
-      ),
     );
   }
 
@@ -1361,15 +1222,18 @@ Widget _buildResponsiveBottomControls({required bool showSignToggle}) {
                 ),
                 textAlign: TextAlign.center,
               ),
-              const SizedBox(height: 14),
-              _buildInlineAnswerBox(),
             ],
           ),
         ),
         const SizedBox(height: 14),
         Expanded(
-          child: _buildResponsiveBottomControls(
-            showSignToggle: selectedMode == MathMode.subtract,
+          child: NumberPad(
+            input: input,
+            isDisabled: isGameOver,
+            onNumberTap: appendInput,
+            onClear: clearInput,
+            onSubmit: submitInput,
+            showSignToggle: selectedMode == MathMode.subtract, 
           ),
         ),
       ],
