@@ -105,12 +105,18 @@ flutter:
 
     - assets/sounds/leave_warning.wav
 
+    - assets/gifs/thinking.gif
     - assets/gifs/success.gif
     - assets/gifs/fail.gif
     - assets/gifs/clap.gif
     - assets/gifs/name.gif
     - assets/gifs/age.gif
     - assets/gifs/ready_to_play.gif
+    - assets/gifs/lesson.gif
+    - assets/gifs/exam.gif
+    - assets/gifs/easy.gif
+    - assets/gifs/medium.gif
+    - assets/gifs/hard.gif
 
 flutter_launcher_icons:
   android: true

@@ -42,7 +42,7 @@ class GameReactionGif extends StatelessWidget {
       child: Container(
         padding: EdgeInsets.all((effectiveWidth * 0.012).clamp(2.0, 8.0)),
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.48),
+          color: Colors.white.withOpacity(0.48),
           borderRadius: BorderRadius.circular((effectiveWidth * 0.065).clamp(18.0, 34.0)),
           border: Border.all(color: Colors.white70, width: 1.8),
           boxShadow: const [

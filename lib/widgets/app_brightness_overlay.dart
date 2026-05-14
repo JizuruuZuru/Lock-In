@@ -30,7 +30,7 @@ class AppBrightnessOverlay extends StatelessWidget {
               Positioned.fill(
                 child: IgnorePointer(
                   child: ColoredBox(
-                    color: Colors.black.withValues(alpha: darkenOpacity),
+                    color: Colors.black.withOpacity(darkenOpacity),
                   ),
                 ),
               ),
@@ -38,7 +38,7 @@ class AppBrightnessOverlay extends StatelessWidget {
               Positioned.fill(
                 child: IgnorePointer(
                   child: ColoredBox(
-                    color: Colors.white.withValues(alpha: lightenOpacity),
+                    color: Colors.white.withOpacity(lightenOpacity),
                   ),
                 ),
               ),

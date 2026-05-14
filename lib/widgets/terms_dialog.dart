@@ -131,7 +131,7 @@ These Terms and Conditions govern your use of our brain training application. By
    - You are responsible for maintaining the confidentiality of your login credentials.
 
 2. **Data Collection and Privacy**
-   - We collect your first name, last name, age, login credential, and game progress (scores, levels, history) to provide and improve our services.
+   - We collect your username, email, and game progress (scores, levels, history) to provide and improve our services.
    - Game logs and leaderboard entries are stored securely in Firebase.
    - Your data may be used for anonymized analytics to enhance user experience.
 
@@ -140,7 +140,7 @@ These Terms and Conditions govern your use of our brain training application. By
    - Attempting to cheat or exploit the system may result in account suspension.
 
 4. **Leaderboards and Public Profiles**
-   - Your player name and scores will be visible on public leaderboards.
+   - Your username and scores will be visible on public leaderboards.
    - You can request removal of your data by contacting support.
 
 5. **Changes to Terms**

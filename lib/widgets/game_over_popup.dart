@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../services/sound_service.dart';
-import 'game_confirmation_dialog.dart';
 
 class GameOverPopup extends StatefulWidget {
   final String incorrectAnswer;
@@ -64,25 +63,6 @@ class _GameOverPopupState extends State<GameOverPopup>
   void dispose() {
     _controller.dispose();
     super.dispose();
-  }
-
-
-  Future<void> _confirmBack() async {
-    if (!mounted) return;
-    SoundService().playButtonSoundNow();
-
-    final shouldGoBack = await GameConfirmationDialog.show(
-      context,
-      title: 'Go back?',
-      message: 'Are you sure you want to go back? This review popup will close.',
-      confirmText: 'Back',
-      cancelText: 'Stay',
-      confirmColor: const Color(0xFF9C27B0),
-      icon: Icons.arrow_back_rounded,
-    );
-
-    if (!mounted || !shouldGoBack) return;
-    widget.onBack();
   }
 
   ButtonStyle _primaryActionButtonStyle(Color backgroundColor) {
@@ -165,13 +145,14 @@ class _GameOverPopupState extends State<GameOverPopup>
             ),
             GestureDetector(
               onTap: () {
-                _confirmBack();
+                SoundService().playButtonSoundNow();
+                widget.onBack();
               },
               child: Container(
                 width: 36,
                 height: 36,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF44336).withValues(alpha: 0.15),
+                  color: const Color(0xFFF44336).withOpacity(0.15),
                   borderRadius: BorderRadius.circular(50),
                 ),
                 child: const Icon(
@@ -190,7 +171,7 @@ class _GameOverPopupState extends State<GameOverPopup>
           width: 80,
           height: 80,
           decoration: BoxDecoration(
-            color: const Color(0xFFF44336).withValues(alpha: 0.1),
+            color: const Color(0xFFF44336).withOpacity(0.1),
             borderRadius: BorderRadius.circular(50),
           ),
           child: const Icon(
@@ -229,7 +210,7 @@ class _GameOverPopupState extends State<GameOverPopup>
           style: TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.w600,
-            color: const Color(0xFFF44336).withValues(alpha: 0.8),
+            color: const Color(0xFFF44336).withOpacity(0.8),
           ),
         ),
         const SizedBox(height: 24),
@@ -253,7 +234,8 @@ class _GameOverPopupState extends State<GameOverPopup>
           height: _actionButtonHeight,
           child: ElevatedButton(
             onPressed: () {
-              _confirmBack();
+              SoundService().playButtonSoundNow();
+              widget.onBack();
             },
             style: _secondaryActionButtonStyle(),
             child: const Text('Back'),
@@ -281,13 +263,14 @@ class _GameOverPopupState extends State<GameOverPopup>
             ),
             GestureDetector(
               onTap: () {
-                _confirmBack();
+                SoundService().playButtonSoundNow();
+                widget.onBack();
               },
               child: Container(
                 width: 36,
                 height: 36,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF44336).withValues(alpha: 0.15),
+                  color: const Color(0xFFF44336).withOpacity(0.15),
                   borderRadius: BorderRadius.circular(50),
                 ),
                 child: const Icon(
@@ -305,10 +288,10 @@ class _GameOverPopupState extends State<GameOverPopup>
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: const Color(0xFFF44336).withValues(alpha: 0.1),
+            color: const Color(0xFFF44336).withOpacity(0.1),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
-              color: const Color(0xFFF44336).withValues(alpha: 0.5),
+              color: const Color(0xFFF44336).withOpacity(0.5),
               width: 2,
             ),
           ),
@@ -352,10 +335,10 @@ class _GameOverPopupState extends State<GameOverPopup>
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: const Color(0xFF4CAF50).withValues(alpha: 0.1),
+            color: const Color(0xFF4CAF50).withOpacity(0.1),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
-              color: const Color(0xFF4CAF50).withValues(alpha: 0.5),
+              color: const Color(0xFF4CAF50).withOpacity(0.5),
               width: 2,
             ),
           ),
@@ -436,7 +419,8 @@ class _GameOverPopupState extends State<GameOverPopup>
           height: _actionButtonHeight,
           child: ElevatedButton(
             onPressed: () {
-              _confirmBack();
+              SoundService().playButtonSoundNow();
+              widget.onBack();
             },
             style: _secondaryActionButtonStyle(),
             child: const Text('Back'),

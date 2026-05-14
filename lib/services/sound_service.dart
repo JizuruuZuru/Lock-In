@@ -31,6 +31,7 @@ class SoundService {
 
     // Other BGM groups
     'bgm_math': ['bgm_math_1.mp3', 'bgm_math_2.mp3'],
+    'bgm_english': ['bgm_english_1.mp3', 'bgm_english_2.mp3'],
     'bgm_memory': ['bgm_memory_1.mp3', 'bgm_memory_2.mp3'],
 
     // SFX groups
@@ -47,6 +48,7 @@ class SoundService {
     BgmPage.login: 'bgm_home',
     BgmPage.register: 'bgm_home',
     BgmPage.math: 'bgm_math',
+    BgmPage.english: 'bgm_english',
     BgmPage.memory: 'bgm_memory',
   };
 
@@ -346,5 +348,6 @@ enum BgmPage {
   login,
   register,
   math,
+  english,
   memory,
 }

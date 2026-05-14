@@ -48,6 +48,8 @@ class _ExamMenuItem {
   });
 }
 
+enum _HomeMode { chooser, lesson, exam }
+
 class HomeMenu extends StatefulWidget {
   const HomeMenu({super.key});
 
@@ -67,8 +69,7 @@ class _HomeMenuState extends State<HomeMenu> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   User? user;
   Map<String, dynamic>? userData;
-  int? _selectedLessonIndex;
-  ExamDifficulty? _selectedExamDifficulty;
+  _HomeMode _homeMode = _HomeMode.chooser;
 
   @override
   void initState() {
@@ -852,23 +853,6 @@ class _HomeMenuState extends State<HomeMenu> {
         ),
       ];
 
-  InputDecoration _dropdownDecoration(String hint) {
-    return InputDecoration(
-      hintText: hint,
-      filled: true,
-      fillColor: Colors.white,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: const BorderSide(color: _inkColor, width: 2),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: const BorderSide(color: _accentColor, width: 2.6),
-      ),
-    );
-  }
-
   void _openGame(Widget page) {
     SoundService().playButtonSoundNow();
     Navigator.push(
@@ -877,226 +861,387 @@ class _HomeMenuState extends State<HomeMenu> {
     );
   }
 
-  Widget _sectionLabel({
-    required IconData icon,
-    required String title,
-    required String subtitle,
-  }) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          padding: const EdgeInsets.all(9),
-          decoration: BoxDecoration(
-            color: _accentColor.withValues(alpha: 0.14),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: _accentColor.withValues(alpha: 0.28), width: 1.6),
+  Widget _buildHome() {
+    return SafeArea(
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          _buildHomeHeader(),
+          const SizedBox(height: 16),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 260),
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeInCubic,
+            transitionBuilder: (child, animation) {
+              return FadeTransition(
+                opacity: animation,
+                child: SlideTransition(
+                  position: Tween<Offset>(
+                    begin: const Offset(0.04, 0),
+                    end: Offset.zero,
+                  ).animate(animation),
+                  child: child,
+                ),
+              );
+            },
+            child: switch (_homeMode) {
+              _HomeMode.chooser => _buildMainChoiceView(),
+              _HomeMode.lesson => _buildLessonView(),
+              _HomeMode.exam => _buildExamView(),
+            },
           ),
-          child: Icon(icon, color: _accentColor, size: 26),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHomeHeader() {
+    return _card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
             children: [
-              Text(
-                title,
-                style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
-              ),
-              const SizedBox(height: 3),
-              Text(
-                subtitle,
-                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+              if (_homeMode != _HomeMode.chooser) ...[
+                InkWell(
+                  borderRadius: BorderRadius.circular(14),
+                  onTap: () {
+                    SoundService().playButtonSoundNow();
+                    setState(() => _homeMode = _HomeMode.chooser);
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: _accentColor.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: _accentColor, width: 1.8),
+                    ),
+                    child: const Icon(
+                      Icons.arrow_back_rounded,
+                      color: _accentColor,
+                      size: 24,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+              ],
+              Expanded(
+                child: Text(
+                  switch (_homeMode) {
+                    _HomeMode.chooser => 'Welcome Back!',
+                    _HomeMode.lesson => 'Choose a Lesson',
+                    _HomeMode.exam => 'Choose an Exam',
+                  },
+                  style: const TextStyle(
+                    fontSize: 28,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
               ),
             ],
           ),
+          const SizedBox(height: 8),
+          Text(
+            switch (_homeMode) {
+              _HomeMode.chooser =>
+                  'Pick Lesson for practice or Exam for randomized challenges.',
+              _HomeMode.lesson =>
+                  'All specific subjects are listed here. Tap one to play.',
+              _HomeMode.exam =>
+                  'Select a difficulty. Each exam gives RNG questions from its subject set.',
+            },
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMainChoiceView() {
+    return Column(
+      key: const ValueKey('home-choice'),
+      children: [
+        _buildGifChoiceCard(
+          title: 'Lesson',
+          subtitle: 'Practice every subject one by one.',
+          gifPath: 'assets/gifs/lesson.gif',
+          icon: Icons.school_rounded,
+          onTap: () {
+            SoundService().playButtonSoundNow();
+            setState(() => _homeMode = _HomeMode.lesson);
+          },
+        ),
+        const SizedBox(height: 16),
+        _buildGifChoiceCard(
+          title: 'Exam',
+          subtitle: 'Easy, Medium, and Hard randomized tests.',
+          gifPath: 'assets/gifs/exam.gif',
+          icon: Icons.quiz_rounded,
+          onTap: () {
+            SoundService().playButtonSoundNow();
+            setState(() => _homeMode = _HomeMode.exam);
+          },
         ),
       ],
     );
   }
 
-  Widget _buildHome() {
-    final lessonGames = _lessonGames;
-    final examItems = _examItems;
-    final selectedLesson = _selectedLessonIndex == null
-        ? null
-        : lessonGames[_selectedLessonIndex!];
-    final selectedExam = _selectedExamDifficulty == null
-        ? null
-        : examItems.firstWhere((item) => item.difficulty == _selectedExamDifficulty);
-
-    return SafeArea(
-      child: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          _card(
-            child: const Column(
+  Widget _buildGifChoiceCard({
+    required String title,
+    required String subtitle,
+    required String gifPath,
+    required IconData icon,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(24),
+      onTap: onTap,
+      child: _card(
+        padding: const EdgeInsets.all(14),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final gifHeight = (constraints.maxWidth * 0.55).clamp(170.0, 260.0);
+            return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Welcome Back!',
-                  style: TextStyle(fontSize: 28, fontWeight: FontWeight.w900),
-                ),
-                SizedBox(height: 8),
-                Text(
-                  'Choose a Lesson for focused practice or take a randomized Exam.',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          _card(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _sectionLabel(
-                  icon: Icons.school_rounded,
-                  title: 'Lesson',
-                  subtitle: 'All specific subjects are here.',
-                ),
-                const SizedBox(height: 14),
-                DropdownButtonFormField<int>(
-                  initialValue: _selectedLessonIndex,
-                  isExpanded: true,
-                  decoration: _dropdownDecoration('Select a lesson subject'),
-                  dropdownColor: _panelColor,
-                  items: List.generate(lessonGames.length, (index) {
-                    final game = lessonGames[index];
-                    return DropdownMenuItem<int>(
-                      value: index,
-                      child: Row(
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(9),
+                      decoration: BoxDecoration(
+                        color: _accentColor.withValues(alpha: 0.14),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: _accentColor.withValues(alpha: 0.30),
+                          width: 1.6,
+                        ),
+                      ),
+                      child: Icon(icon, color: _accentColor, size: 26),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Icon(game.icon, size: 20, color: _accentColor),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              game.name,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(fontWeight: FontWeight.w800),
+                          Text(
+                            title,
+                            style: const TextStyle(
+                              fontSize: 24,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            subtitle,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
                         ],
                       ),
-                    );
-                  }),
-                  onChanged: (value) {
-                    SoundService().playButtonSoundNow();
-                    setState(() => _selectedLessonIndex = value);
-                  },
+                    ),
+                    const Icon(Icons.arrow_forward_rounded, color: _accentColor),
+                  ],
                 ),
-                if (selectedLesson != null) ...[
-                  const SizedBox(height: 10),
-                  Text(
-                    selectedLesson.subtitle,
-                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-                  ),
-                ],
-                const SizedBox(height: 14),
-                SizedBox(
+                const SizedBox(height: 12),
+                Container(
                   width: double.infinity,
-                  child: ElevatedButton.icon(
-                    onPressed: selectedLesson == null
-                        ? null
-                        : () => _openGame(selectedLesson.widget),
-                    icon: const Icon(Icons.play_arrow_rounded),
-                    label: const Text('Start Lesson'),
+                  height: gifHeight,
+                  decoration: BoxDecoration(
+                    color: _accentColor.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: _inkColor.withValues(alpha: 0.18),
+                      width: 1.8,
+                    ),
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: Image.asset(
+                    gifPath,
+                    fit: BoxFit.contain,
+                    gaplessPlayback: true,
                   ),
                 ),
               ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          _card(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _sectionLabel(
-                  icon: Icons.quiz_rounded,
-                  title: 'Exam',
-                  subtitle: 'Random questions based on the selected difficulty.',
-                ),
-                const SizedBox(height: 14),
-                DropdownButtonFormField<ExamDifficulty>(
-                  initialValue: _selectedExamDifficulty,
-                  isExpanded: true,
-                  decoration: _dropdownDecoration('Select Easy, Medium, or Hard'),
-                  dropdownColor: _panelColor,
-                  items: examItems.map((item) {
-                    return DropdownMenuItem<ExamDifficulty>(
-                      value: item.difficulty,
-                      child: Text(
-                        item.title,
-                        style: const TextStyle(fontWeight: FontWeight.w900),
-                      ),
-                    );
-                  }).toList(),
-                  onChanged: (value) {
-                    SoundService().playButtonSoundNow();
-                    setState(() => _selectedExamDifficulty = value);
-                  },
-                ),
-                if (selectedExam != null) ...[
-                  const SizedBox(height: 10),
-                  Text(
-                    selectedExam.subtitle,
-                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-                  ),
-                ],
-                const SizedBox(height: 14),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    onPressed: selectedExam == null
-                        ? null
-                        : () => _openGame(ExamGame(difficulty: selectedExam.difficulty)),
-                    icon: const Icon(Icons.shuffle_rounded),
-                    label: Text(selectedExam == null
-                        ? 'Start Exam'
-                        : 'Start ${selectedExam.title} Exam'),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          const Padding(
-            padding: EdgeInsets.only(left: 4, bottom: 6),
-            child: Text(
-              'All Lessons',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
-            ),
-          ),
-          ...lessonGames.asMap().entries.map((entry) {
-            final index = entry.key;
-            final game = entry.value;
-            return Padding(
-              padding: const EdgeInsets.symmetric(vertical: 6),
-              child: Transform.rotate(
-                angle: index.isEven ? -0.006 : 0.006,
-                child: _card(
-                  padding: const EdgeInsets.all(14),
-                  child: ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: Icon(game.icon, size: 32, color: _accentColor),
-                    title: Text(
-                      game.name,
-                      style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLessonView() {
+    final lessonGames = _lessonGames;
+    return Column(
+      key: const ValueKey('lesson-view'),
+      children: [
+        ...lessonGames.asMap().entries.map((entry) {
+          final index = entry.key;
+          final game = entry.value;
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            child: Transform.rotate(
+              angle: index.isEven ? -0.006 : 0.006,
+              child: _card(
+                padding: const EdgeInsets.all(14),
+                child: ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Container(
+                    width: 46,
+                    height: 46,
+                    decoration: BoxDecoration(
+                      color: _accentColor.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(15),
+                      border: Border.all(color: _accentColor, width: 1.8),
                     ),
-                    subtitle: Text(
-                      game.subtitle,
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                    trailing: const Icon(Icons.arrow_forward),
-                    onTap: () => _openGame(game.widget),
+                    child: Icon(game.icon, size: 28, color: _accentColor),
                   ),
+                  title: Text(
+                    game.name,
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  subtitle: Text(
+                    game.subtitle,
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  trailing: const Icon(Icons.arrow_forward_rounded),
+                  onTap: () => _openGame(game.widget),
                 ),
               ),
+            ),
+          );
+        }),
+      ],
+    );
+  }
+
+  Widget _buildExamView() {
+    return Column(
+      key: const ValueKey('exam-view'),
+      children: [
+        _buildExamGifCard(
+          item: _examItems[0],
+          gifPath: 'assets/gifs/easy.gif',
+          color: const Color(0xFF43A047),
+        ),
+        const SizedBox(height: 14),
+        _buildExamGifCard(
+          item: _examItems[1],
+          gifPath: 'assets/gifs/medium.gif',
+          color: const Color(0xFFFF9800),
+        ),
+        const SizedBox(height: 14),
+        _buildExamGifCard(
+          item: _examItems[2],
+          gifPath: 'assets/gifs/hard.gif',
+          color: const Color(0xFFD84315),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildExamGifCard({
+    required _ExamMenuItem item,
+    required String gifPath,
+    required Color color,
+  }) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(24),
+      onTap: () => _openGame(ExamGame(difficulty: item.difficulty)),
+      child: _card(
+        padding: const EdgeInsets.all(14),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final gifHeight = (constraints.maxWidth * 0.46).clamp(145.0, 230.0);
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: color, width: 2),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 42,
+                        height: 42,
+                        decoration: BoxDecoration(
+                          color: color,
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: const Icon(
+                          Icons.shuffle_rounded,
+                          color: Colors.white,
+                          size: 25,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '${item.title} Exam',
+                              style: TextStyle(
+                                fontSize: 22,
+                                fontWeight: FontWeight.w900,
+                                color: color,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              item.subtitle,
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  width: double.infinity,
+                  height: gifHeight,
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: color.withValues(alpha: 0.45),
+                      width: 1.8,
+                    ),
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: Image.asset(
+                    gifPath,
+                    fit: BoxFit.contain,
+                    gaplessPlayback: true,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: () => _openGame(ExamGame(difficulty: item.difficulty)),
+                    icon: const Icon(Icons.play_arrow_rounded),
+                    label: Text('Start ${item.title} Exam'),
+                    style: ElevatedButton.styleFrom(backgroundColor: color),
+                  ),
+                ),
+              ],
             );
-          }),
-        ],
+          },
+        ),
       ),
     );
   }
