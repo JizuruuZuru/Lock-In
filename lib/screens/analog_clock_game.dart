@@ -6,6 +6,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../services/game_logger.dart';
+import '../services/face_proctor_contract.dart';
+import '../services/face_proctor_service.dart';
 import '../services/leaderboard_service.dart';
 import '../services/leave_attempt_logger.dart';
 import '../services/sound_service.dart';
@@ -18,6 +20,7 @@ import '../widgets/hearts_display.dart';
 import '../widgets/incorrect_splash.dart';
 import '../widgets/level_up_popup.dart';
 import '../widgets/leave_warning_overlay.dart';
+import '../widgets/game_security_overlay.dart';
 import '../widgets/number_pad.dart';
 
 class AnalogClockGame extends StatefulWidget {
@@ -39,6 +42,7 @@ class _AnalogClockGameState extends State<AnalogClockGame>
   static const Duration _incorrectFeedbackDuration = Duration(milliseconds: 1500);
 
   final Random _random = Random();
+  final FaceProctorService _faceProctor = createFaceProctorService();
 
   bool hasStarted = false;
   bool isGameOver = false;
@@ -804,6 +808,37 @@ class _AnalogClockGameState extends State<AnalogClockGame>
                 child: Stack(
                   children: [
                     if (!hasStarted) _buildStartScreen() else _buildGameUI(),
+                    GameSecurityOverlay(
+                      faceProctor: _faceProctor,
+                      gameName: _gameName,
+                      isActive: hasStarted && !isGameOver && !showCorrectSplash && !showIncorrectSplash && !_showExitConfirmation,
+                      onLockChanged: (locked) {
+                        if (!mounted) return;
+                        setState(() {
+                          isGameOver = locked;
+                          if (locked) {
+                            showCorrectSplash = false;
+                            showIncorrectSplash = false;
+                            _showExitConfirmation = false;
+                          } else {
+                            timerKey = UniqueKey();
+                          }
+                        });
+                      },
+                      onLeave: () async {
+                        if (score > 0) {
+                          await saveScore();
+                        }
+                        if (!mounted) return;
+                        Navigator.of(context).maybePop();
+                      },
+                      onStay: () {
+                        startGame();
+                      },
+                      onAttemptRecorded: () async {
+                        await saveScore();
+                      },
+                    ),
                     if (_showExitConfirmation)
                       Positioned.fill(
                         child: LeaveWarningOverlay(

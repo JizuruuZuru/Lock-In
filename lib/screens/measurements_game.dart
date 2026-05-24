@@ -6,6 +6,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../services/game_logger.dart';
+import '../services/face_proctor_contract.dart';
+import '../services/face_proctor_service.dart';
 import '../services/leaderboard_service.dart';
 import '../services/leave_attempt_logger.dart';
 import '../services/sound_service.dart';
@@ -17,6 +19,7 @@ import '../widgets/game_timer.dart';
 import '../widgets/hearts_display.dart';
 import '../widgets/incorrect_splash.dart';
 import '../widgets/leave_warning_overlay.dart';
+import '../widgets/game_security_overlay.dart';
 import '../widgets/level_up_popup.dart';
 
 enum MeasurementMode { lengths, weights, capacities, temperatures, random }
@@ -84,6 +87,7 @@ class _MeasurementsGameState extends State<MeasurementsGame> {
   static const Duration _incorrectFeedbackDuration = Duration(milliseconds: 1500);
 
   final Random _random = Random();
+  final FaceProctorService _faceProctor = createFaceProctorService();
 
   MeasurementMode? selectedMode;
   bool hasStarted = false;
@@ -770,7 +774,7 @@ class _MeasurementsGameState extends State<MeasurementsGame> {
     Navigator.pop(context);
   }
 
-  @override
+  @override 
   Widget build(BuildContext context) {
     return Theme(
       data: _buildTheme(context),
@@ -800,17 +804,48 @@ class _MeasurementsGameState extends State<MeasurementsGame> {
                     child: IncorrectSplash(duration: _incorrectFeedbackDuration),
                   ),
                 ),
-              if (_showExitConfirmation)
+              GameSecurityOverlay(
+                      faceProctor: _faceProctor,
+                      gameName: selectedMode == null ? _gameName : '$_gameName - ${_modeTitle(selectedMode!)}',
+                      isActive: hasStarted && selectedMode != null && !isGameOver && !showCorrectSplash && !showIncorrectSplash && !_showExitConfirmation,
+                      onLockChanged: (locked) {
+                        if (!mounted) return;
+                        setState(() {
+                          isGameOver = locked;
+                          if (locked) {
+                            showCorrectSplash = false;
+                            showIncorrectSplash = false;
+                            _showExitConfirmation = false;
+                          } else {
+                            timerKey = UniqueKey();
+                          }
+                        });
+                      },
+                      onLeave: () async {
+                        if (score > 0) {
+                          await saveScore();
+                        }
+                        if (!mounted) return;
+                        Navigator.of(context).maybePop();
+                      },
+                      onStay: () {
+                        startGame();
+                      },
+                      onAttemptRecorded: () async {
+                        await saveScore();
+                      },
+                    ),
+                    if (_showExitConfirmation)
                 Positioned.fill(
                   child: LeaveWarningOverlay(
                     title: 'Leave game?',
                     message:
                         'Your current Measurements score will be saved before leaving.',
-                    okText: 'Stay',
-                    backText: 'Leave',
+                    okText: 'Leave',
+                    backText: 'Stay',
                     isBusy: _isSavingScore,
-                    onOk: _cancelExitConfirmation,
-                    onBack: _confirmExitFromBack,
+                    onOk: _confirmExitFromBack,
+                    onBack: _cancelExitConfirmation,
                   ),
                 ),
             ],
@@ -825,129 +860,142 @@ class _MeasurementsGameState extends State<MeasurementsGame> {
       child: LayoutBuilder(
         builder: (context, constraints) {
           final isWide = constraints.maxWidth >= 760;
+          final maxWidth = (constraints.maxWidth.isFinite
+                  ? constraints.maxWidth
+                  : MediaQuery.sizeOf(context).width)
+              .clamp(280.0, 680.0)
+              .toDouble();
           final chosen = selectedMode;
-          return ListView(
-            padding: EdgeInsets.symmetric(
-              horizontal: isWide ? 28 : 16,
-              vertical: 16,
-            ),
-            children: [
-              _card(
-                child: const Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Measurements',
-                      style: TextStyle(fontSize: 30, fontWeight: FontWeight.w900),
-                    ),
-                    SizedBox(height: 8),
-                    Text(
-                      'Review a worksheet example first, then choose a mode and play.',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                    ),
-                  ],
+
+          return Center(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.topCenter,
+              child: SizedBox(
+                width: maxWidth,
+                child: Padding(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: isWide ? 12 : 8,
+                    vertical: 12,
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _card(
+                        child: const Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Measurements',
+                              style: TextStyle(
+                                fontSize: 30,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            SizedBox(height: 8),
+                            Text(
+                              'Review examples, choose a mode, then answer compact conversion questions.',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      ..._modes.asMap().entries.map((entry) {
+                        final index = entry.key;
+                        final mode = entry.value;
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 6),
+                          child: Transform.rotate(
+                            angle: index.isEven ? -0.006 : 0.006,
+                            child: SizedBox(
+                              width: double.infinity,
+                              child: _modeButton(mode),
+                            ),
+                          ),
+                        );
+                      }),
+                      const SizedBox(height: 14),
+                      _worksheetPreview(chosen ?? MeasurementMode.random),
+                      const SizedBox(height: 14),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: chosen == null
+                              ? null
+                              : () {
+                                  SoundService().playButtonSoundNow();
+                                  startGame();
+                                },
+                          icon: const Icon(Icons.play_arrow_rounded),
+                          label: Text(
+                            chosen == null
+                                ? 'Choose a Mode First'
+                                : 'Start ${_modeTitle(chosen)}',
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-              const SizedBox(height: 10),
-              GridView.count(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                crossAxisCount: isWide ? 3 : 1,
-                childAspectRatio: isWide ? 2.15 : 2.75,
-                mainAxisSpacing: 12,
-                crossAxisSpacing: 12,
-                children: [
-                  for (final mode in _modes) _modeCard(mode),
-                ],
-              ),
-              const SizedBox(height: 16),
-              _worksheetPreview(chosen ?? MeasurementMode.random),
-              const SizedBox(height: 16),
-              ElevatedButton.icon(
-                onPressed: chosen == null
-                    ? null
-                    : () {
-                        SoundService().playButtonSoundNow();
-                        startGame();
-                      },
-                icon: const Icon(Icons.play_arrow_rounded),
-                label: Text(chosen == null
-                    ? 'Choose a Mode First'
-                    : 'Start ${_modeTitle(chosen)}'),
-              ),
-            ],
+            ),
           );
         },
       ),
     );
   }
 
-  Widget _modeCard(MeasurementMode mode) {
+  Widget _modeButton(MeasurementMode mode) {
     final active = selectedMode == mode;
-    return InkWell(
-      borderRadius: BorderRadius.circular(22),
-      onTap: () => _selectMode(mode),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: active ? const Color(0xFFE8F5E9) : _panelColor,
-          borderRadius: BorderRadius.circular(22),
-          border: Border.all(
-            color: active ? _accentColor : _inkColor,
-            width: active ? 3 : 2,
+    final style = ElevatedButton.styleFrom(
+      backgroundColor: active ? _accentColor : _panelColor,
+      foregroundColor: active ? Colors.white : _inkColor,
+      minimumSize: const Size.fromHeight(58),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+      side: BorderSide(
+        color: active ? _inkColor : _inkColor.withValues(alpha: 0.95),
+        width: active ? 2.8 : 2,
+      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      elevation: 0,
+    );
+
+    return ElevatedButton.icon(
+      onPressed: () => _selectMode(mode),
+      style: style,
+      icon: Icon(_modeIcon(mode), size: 24),
+      label: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            _modeTitle(mode),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontWeight: FontWeight.w900),
           ),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x332C3550),
-              offset: Offset(4, 5),
-              blurRadius: 0,
+          const SizedBox(height: 2),
+          Text(
+            _modeSubtitle(mode),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: active ? Colors.white.withValues(alpha: 0.90) : _inkColor.withValues(alpha: 0.78),
             ),
-          ],
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: _accentColor.withValues(alpha: 0.14),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: _inkColor, width: 1.6),
-              ),
-              child: Icon(_modeIcon(mode), color: _accentColor, size: 26),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    _modeTitle(mode),
-                    style: const TextStyle(
-                      fontSize: 17,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    _modeSubtitle(mode),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
+
+
+
 
   Widget _worksheetPreview(MeasurementMode mode) {
     final items = _worksheetItems(mode);
@@ -1292,9 +1340,14 @@ class _MeasurementsGameState extends State<MeasurementsGame> {
       child: LayoutBuilder(
         builder: (context, constraints) {
           final compact = constraints.maxHeight < 520;
-          return ListView(
-            padding: EdgeInsets.zero,
-            children: [
+return FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.topCenter,
+              child: SizedBox(
+                width: constraints.maxWidth.isFinite ? constraints.maxWidth : MediaQuery.sizeOf(context).width,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -1348,8 +1401,11 @@ class _MeasurementsGameState extends State<MeasurementsGame> {
                   ),
                 ),
               ),
-            ],
-          );
+            
+                  ],
+                ),
+              ),
+            );
         },
       ),
     );
@@ -1472,13 +1528,20 @@ class _MeasurementsGameState extends State<MeasurementsGame> {
                       content[2],
                     ],
                   )
-                : ListView(
-                    physics: const BouncingScrollPhysics(),
-                    children: [
-                      content[0],
-                      const SizedBox(height: 10),
-                      Center(child: content[2]),
-                    ],
+                : FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.topCenter,
+                    child: SizedBox(
+                      width: width,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          content[0],
+                          const SizedBox(height: 10),
+                          Center(child: content[2]),
+                        ],
+                      ),
+                    ),
                   ),
           );
         },
@@ -1686,9 +1749,10 @@ class _MeasurementsGameState extends State<MeasurementsGame> {
         style: ElevatedButton.styleFrom(
           backgroundColor: _accentColor,
           foregroundColor: Colors.white,
+          minimumSize: const Size.fromHeight(52),
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
           textStyle: const TextStyle(
-            fontSize: 18,
+            fontSize: 16,
             fontWeight: FontWeight.w800,
             letterSpacing: 0.5,
           ),
@@ -1697,6 +1761,17 @@ class _MeasurementsGameState extends State<MeasurementsGame> {
             side: const BorderSide(color: _inkColor, width: 2),
           ),
           elevation: 0,
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          foregroundColor: _inkColor,
+          minimumSize: const Size.fromHeight(52),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          textStyle: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+          ),
         ),
       ),
     );
@@ -1787,15 +1862,17 @@ class _MeasurementAnswerPad extends StatelessWidget {
         final height = panelHeight.clamp(220.0, 380.0).toDouble();
         final padding = (width * 0.020).clamp(6.0, 12.0).toDouble();
         final spacing = (width * 0.010).clamp(3.0, 7.0).toDouble();
+        final actionGap = (spacing * 5.0).clamp(24.0, 44.0).toDouble();
+        final actionSpacing = (spacing * 3.8).clamp(18.0, 36.0).toDouble();
         final rows = const [
           ['1', '2', '3', '.'],
           ['4', '5', '6', 'SPACE'],
           ['7', '8', '9', '⌫'],
-          ['C', '0', '→'],
+          ['Delete', '0', 'Enter'],
         ];
         final contentWidth = width - padding * 2;
         final keyWidth = ((contentWidth - spacing * 3) / 4).clamp(42.0, 150.0).toDouble();
-        final keyHeight = ((height - padding * 2 - spacing * (rows.length - 1)) / rows.length)
+        final keyHeight = ((height - padding * 2 - spacing * 2 - actionGap) / rows.length)
             .clamp(40.0, 84.0)
             .toDouble();
         final fontSize = (min(keyWidth, keyHeight) * 0.44).clamp(15.0, 31.0).toDouble();
@@ -1824,22 +1901,31 @@ class _MeasurementAnswerPad extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     for (var row = 0; row < rows.length; row++) ...[
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          for (var col = 0; col < rows[row].length; col++) ...[
-                            _button(
-                              rows[row][col],
-                              keyWidth,
-                              keyHeight,
-                              fontSize,
-                            ),
-                            if (col != rows[row].length - 1) SizedBox(width: spacing),
+                      if (row == rows.length - 1)
+                        SizedBox(
+                          width: contentWidth,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              _button('Delete', keyWidth * 1.35, keyHeight, fontSize),
+                              _button('0', keyWidth, keyHeight, fontSize),
+                              _button('Enter', keyWidth * 1.35, keyHeight, fontSize),
+                            ],
+                          ),
+                        )
+                      else
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            for (var col = 0; col < rows[row].length; col++) ...[
+                              _button(rows[row][col], keyWidth, keyHeight, fontSize),
+                              if (col != rows[row].length - 1) SizedBox(width: spacing),
+                            ],
                           ],
-                        ],
-                      ),
-                      if (row != rows.length - 1) SizedBox(height: spacing),
+                        ),
+                      if (row != rows.length - 1)
+                        SizedBox(height: row == rows.length - 2 ? actionGap : spacing),
                     ],
                   ],
                 ),
@@ -1854,9 +1940,9 @@ class _MeasurementAnswerPad extends StatelessWidget {
   Widget _button(String label, double width, double height, double fontSize) {
     VoidCallback? action;
     String text = label;
-    if (label == 'C') {
+    if (label == 'Delete') {
       action = onClear;
-    } else if (label == '→') {
+    } else if (label == 'Enter') {
       action = onSubmit;
     } else if (label == '⌫') {
       action = () => onValueTap('BACK');
@@ -1879,7 +1965,7 @@ class _MeasurementAnswerPad extends StatelessWidget {
             borderRadius: BorderRadius.circular((height * 0.24).clamp(8.0, 16.0).toDouble()),
           ),
           textStyle: TextStyle(
-            fontSize: label == 'SPACE' ? fontSize * 0.72 : fontSize,
+            fontSize: (label == 'SPACE' || label == 'Delete' || label == 'Enter') ? fontSize * 0.72 : fontSize,
             fontWeight: FontWeight.w900,
           ),
         ),

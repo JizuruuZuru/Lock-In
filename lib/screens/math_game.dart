@@ -218,6 +218,7 @@ class _MathGameState extends State<MathGame> with WidgetsBindingObserver {
 
     if (state == AppLifecycleState.inactive ||
         state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden ||
         state == AppLifecycleState.detached) {
       unawaited(_stopFaceProctor());
       _didLeaveApp = true;
@@ -888,8 +889,10 @@ class _MathGameState extends State<MathGame> with WidgetsBindingObserver {
                     title: 'Warning',
                     message: _leaveWarningMessage,
                     isBusy: _processingLeaveAttempt,
-                    onOk: _restartFromLeaveWarning,
-                    onBack: _backFromLeaveWarning,
+                    okText: 'Leave',
+                    backText: 'Stay',
+                    onOk: _backFromLeaveWarning,
+                    onBack: _restartFromLeaveWarning,
                   ),
                 ),
             ],
@@ -1056,46 +1059,63 @@ class _MathGameState extends State<MathGame> with WidgetsBindingObserver {
 
   Widget _buildModeSelection() {
     final modes = MathMode.values;
-    return ListView(
-      children: [
-        _card(
-          child: const Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Pick Your Math Arena',
-                style: TextStyle(fontSize: 28, fontWeight: FontWeight.w900),
-              ),
-              SizedBox(height: 10),
-              Text(
-                'Solve equations fast, level up your brain, and beat the clock.',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 14),
-        ...modes.asMap().entries.map((entry) {
-          final index = entry.key;
-          final mode = entry.value;
-          return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 6),
-            child: Transform.rotate(
-              angle: index.isEven ? -0.01 : 0.01,
-              child: SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: () {
-                    SoundService().playButtonSoundNow();
-                    setState(() => pendingMode = mode);
-                  },
-                  child: Text(modeDisplayName(mode)),
-                ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : MediaQuery.sizeOf(context).width;
+        return Center(
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.topCenter,
+            child: SizedBox(
+              width: width.clamp(280.0, 620.0).toDouble(),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _card(
+                    child: const Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Pick Your Math Arena',
+                          style: TextStyle(fontSize: 28, fontWeight: FontWeight.w900),
+                        ),
+                        SizedBox(height: 10),
+                        Text(
+                          'Solve equations fast, level up your brain, and beat the clock.',
+                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  ...modes.asMap().entries.map((entry) {
+                    final index = entry.key;
+                    final mode = entry.value;
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 6),
+                      child: Transform.rotate(
+                        angle: index.isEven ? -0.01 : 0.01,
+                        child: SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton(
+                            onPressed: () {
+                              SoundService().playButtonSoundNow();
+                              setState(() => pendingMode = mode);
+                            },
+                            child: Text(modeDisplayName(mode)),
+                          ),
+                        ),
+                      ),
+                    );
+                  }),
+                ],
               ),
             ),
-          );
-        }),
-      ],
+          ),
+        );
+      },
     );
   }
 

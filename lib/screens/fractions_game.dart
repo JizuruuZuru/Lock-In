@@ -6,6 +6,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../services/game_logger.dart';
+import '../services/face_proctor_contract.dart';
+import '../services/face_proctor_service.dart';
 import '../services/leaderboard_service.dart';
 import '../services/leave_attempt_logger.dart';
 import '../services/sound_service.dart';
@@ -17,6 +19,7 @@ import '../widgets/game_timer.dart';
 import '../widgets/hearts_display.dart';
 import '../widgets/incorrect_splash.dart';
 import '../widgets/leave_warning_overlay.dart';
+import '../widgets/game_security_overlay.dart';
 import '../widgets/level_up_popup.dart';
 
 enum _FractionQuestionType {
@@ -159,6 +162,7 @@ class _FractionsGameState extends State<FractionsGame> {
   static const Duration _incorrectFeedbackDuration = Duration(milliseconds: 1500);
 
   final Random _random = Random();
+  final FaceProctorService _faceProctor = createFaceProctorService();
 
   bool hasStarted = false;
   bool isGameOver = false;
@@ -1012,7 +1016,38 @@ class _FractionsGameState extends State<FractionsGame> {
                   ),
                 ),
               ),
-              if (_showExitConfirmation)
+              GameSecurityOverlay(
+                      faceProctor: _faceProctor,
+                      gameName: _gameName,
+                      isActive: hasStarted && !isGameOver && !showCorrectSplash && !showIncorrectSplash && !_showExitConfirmation,
+                      onLockChanged: (locked) {
+                        if (!mounted) return;
+                        setState(() {
+                          isGameOver = locked;
+                          if (locked) {
+                            showCorrectSplash = false;
+                            showIncorrectSplash = false;
+                            _showExitConfirmation = false;
+                          } else {
+                            timerKey = UniqueKey();
+                          }
+                        });
+                      },
+                      onLeave: () async {
+                        if (score > 0) {
+                          await saveScore();
+                        }
+                        if (!mounted) return;
+                        Navigator.of(context).maybePop();
+                      },
+                      onStay: () {
+                        startGame();
+                      },
+                      onAttemptRecorded: () async {
+                        await saveScore();
+                      },
+                    ),
+                    if (_showExitConfirmation)
                 Positioned.fill(
                   child: LeaveWarningOverlay(
                     title: 'Leave game?',
@@ -1251,10 +1286,14 @@ class _FractionsGameState extends State<FractionsGame> {
             .clamp(220.0, 340.0)
             .toDouble();
 
-        return ListView(
-          padding: EdgeInsets.zero,
-          physics: const BouncingScrollPhysics(),
-          children: [
+        return FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.topCenter,
+          child: SizedBox(
+            width: availableWidth,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
             Row(
               children: [
                 Expanded(child: _statPill('Score', '$score', Icons.stars_rounded)),
@@ -1322,7 +1361,10 @@ class _FractionsGameState extends State<FractionsGame> {
               child: _buildFractionPad(),
             ),
             const SizedBox(height: 14),
-          ],
+          
+              ],
+            ),
+          ),
         );
       },
     );
@@ -1532,6 +1574,8 @@ class _FractionAnswerPad extends StatelessWidget {
     final height = panelHeight.clamp(220.0, 360.0).toDouble();
     final padding = (width * 0.022).clamp(6.0, 12.0).toDouble();
     final spacing = (width * 0.012).clamp(3.0, 7.0).toDouble();
+    final actionGap = (spacing * 5.0).clamp(24.0, 44.0).toDouble();
+    final actionSpacing = (spacing * 3.7).clamp(18.0, 34.0).toDouble();
     final contentWidth = width - padding * 2;
 
     final rows = const [
@@ -1539,11 +1583,11 @@ class _FractionAnswerPad extends StatelessWidget {
       ['4', '5', '6', 'SPACE'],
       ['7', '8', '9', '.'],
       ['<', '0', '>', '='],
-      ['BACK', 'C', '→'],
+      ['BACK', 'Delete', 'Enter'],
     ];
 
     final keyWidth = ((contentWidth - spacing * 3) / 4).clamp(44.0, 152.0).toDouble();
-    final keyHeight = ((height - padding * 2 - spacing * (rows.length - 1)) / rows.length)
+    final keyHeight = ((height - padding * 2 - spacing * 3 - actionGap) / rows.length)
         .clamp(28.0, 62.0)
         .toDouble();
     final fontSize = (min(keyWidth, keyHeight) * 0.44).clamp(15.0, 30.0).toDouble();
@@ -1572,17 +1616,31 @@ class _FractionAnswerPad extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 for (var r = 0; r < rows.length; r++) ...[
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      for (var i = 0; i < rows[r].length; i++) ...[
-                        _button(rows[r][i], keyWidth, keyHeight, fontSize),
-                        if (i != rows[r].length - 1) SizedBox(width: spacing),
+                  if (r == rows.length - 1)
+                    SizedBox(
+                      width: contentWidth,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          _button('Delete', keyWidth * 1.35, keyHeight, fontSize),
+                          _button('BACK', keyWidth, keyHeight, fontSize),
+                          _button('Enter', keyWidth * 1.35, keyHeight, fontSize),
+                        ],
+                      ),
+                    )
+                  else
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        for (var i = 0; i < rows[r].length; i++) ...[
+                          _button(rows[r][i], keyWidth, keyHeight, fontSize),
+                          if (i != rows[r].length - 1) SizedBox(width: spacing),
+                        ],
                       ],
-                    ],
-                  ),
-                  if (r != rows.length - 1) SizedBox(height: spacing),
+                    ),
+                  if (r != rows.length - 1)
+                    SizedBox(height: r == rows.length - 2 ? actionGap : spacing),
                 ],
               ],
             ),
@@ -1599,8 +1657,8 @@ class _FractionAnswerPad extends StatelessWidget {
       _ => label,
     };
     final action = switch (label) {
-      'C' => onClear,
-      '→' => onSubmit,
+      'Delete' => onClear,
+      'Enter' => onSubmit,
       'SPACE' => () => onTap('SPACE'),
       'BACK' => () => onTap('BACK'),
       _ => () => onTap(label),
@@ -1617,7 +1675,12 @@ class _FractionAnswerPad extends StatelessWidget {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular((height * 0.26).clamp(8.0, 16.0).toDouble()),
           ),
-          textStyle: TextStyle(fontSize: fontSize, fontWeight: FontWeight.w900),
+          textStyle: TextStyle(
+            fontSize: (label == 'Delete' || label == 'Enter' || label == 'SPACE')
+                ? fontSize * 0.78
+                : fontSize,
+            fontWeight: FontWeight.w900,
+          ),
         ),
         child: FittedBox(
           fit: BoxFit.scaleDown,

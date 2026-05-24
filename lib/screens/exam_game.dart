@@ -6,6 +6,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../services/game_logger.dart';
+import '../services/face_proctor_contract.dart';
+import '../services/face_proctor_service.dart';
 import '../services/leaderboard_service.dart';
 import '../services/leave_attempt_logger.dart';
 import '../services/sound_service.dart';
@@ -17,6 +19,7 @@ import '../widgets/game_timer.dart';
 import '../widgets/hearts_display.dart';
 import '../widgets/incorrect_splash.dart';
 import '../widgets/leave_warning_overlay.dart';
+import '../widgets/game_security_overlay.dart';
 import '../widgets/level_up_popup.dart';
 
 String _examDifficultyName(ExamDifficulty difficulty) {
@@ -69,6 +72,7 @@ class _ExamGameState extends State<ExamGame> {
   static const Duration _incorrectFeedbackDuration = Duration(milliseconds: 1450);
 
   final Random _random = Random();
+  final FaceProctorService _faceProctor = createFaceProctorService();
 
   bool hasStarted = false;
   bool isGameOver = false;
@@ -783,7 +787,38 @@ class _ExamGameState extends State<ExamGame> {
                   ),
                 ),
               ),
-              if (_showExitConfirmation)
+              GameSecurityOverlay(
+                      faceProctor: _faceProctor,
+                      gameName: _gameName,
+                      isActive: hasStarted && !isGameOver && !showCorrectSplash && !showIncorrectSplash && !_showExitConfirmation,
+                      onLockChanged: (locked) {
+                        if (!mounted) return;
+                        setState(() {
+                          isGameOver = locked;
+                          if (locked) {
+                            showCorrectSplash = false;
+                            showIncorrectSplash = false;
+                            _showExitConfirmation = false;
+                          } else {
+                            timerKey = UniqueKey();
+                          }
+                        });
+                      },
+                      onLeave: () async {
+                        if (score > 0) {
+                          await saveScore();
+                        }
+                        if (!mounted) return;
+                        Navigator.of(context).maybePop();
+                      },
+                      onStay: () {
+                        startGame();
+                      },
+                      onAttemptRecorded: () async {
+                        await saveScore();
+                      },
+                    ),
+                    if (_showExitConfirmation)
                 Positioned.fill(
                   child: LeaveWarningOverlay(
                     title: 'Leave game?',
@@ -906,49 +941,60 @@ class _ExamGameState extends State<ExamGame> {
   }
 
   Widget _buildStartPanel() {
-    return Center(
-      child: SingleChildScrollView(
-        child: _card(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '$_difficultyName Exam',
-                style: const TextStyle(fontSize: 30, fontWeight: FontWeight.w900),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'Questions are randomized every round.',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 14),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: _inkColor.withValues(alpha: 0.25), width: 1.5),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : MediaQuery.sizeOf(context).width;
+        return Center(
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: SizedBox(
+              width: width.clamp(280.0, 560.0).toDouble(),
+              child: _card(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '$_difficultyName Exam',
+                      style: const TextStyle(fontSize: 30, fontWeight: FontWeight.w900),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Questions are randomized every round.',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 14),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: _inkColor.withValues(alpha: 0.25), width: 1.5),
+                      ),
+                      child: Text(
+                        _topicSummary(),
+                        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: startGame,
+                        icon: const Icon(Icons.play_arrow_rounded),
+                        label: Text('Start $_difficultyName Exam'),
+                      ),
+                    ),
+                  ],
                 ),
-                child: Text(
-                  _topicSummary(),
-                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
-                ),
               ),
-              const SizedBox(height: 18),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: startGame,
-                  icon: const Icon(Icons.play_arrow_rounded),
-                  label: Text('Start $_difficultyName Exam'),
-                ),
-              ),
-            ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -980,10 +1026,15 @@ class _ExamGameState extends State<ExamGame> {
             ),
             const SizedBox(height: 10),
             Expanded(
-              child: SingleChildScrollView(
-                child: Column(
-                  children: [
-                    _card(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.topCenter,
+                child: SizedBox(
+                  width: width,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _card(
                       padding: const EdgeInsets.all(16),
                       child: Column(
                         children: [
@@ -1055,8 +1106,9 @@ class _ExamGameState extends State<ExamGame> {
                         ],
                       ),
                     ),
-                    const SizedBox(height: 10),
-                  ],
+                      const SizedBox(height: 10),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -1095,7 +1147,7 @@ class _ExamKeypad extends StatelessWidget {
       ['1', '2', '3', '/', '.'],
       ['4', '5', '6', ':', '-'],
       ['7', '8', '9', 'space', '⌫'],
-      ['C', '0', 'Submit'],
+      ['Delete', '0', 'Enter'],
     ];
 
     return LayoutBuilder(
@@ -1108,9 +1160,11 @@ class _ExamKeypad extends StatelessWidget {
             : MediaQuery.sizeOf(context).height * 0.24;
         final padding = (width * 0.014).clamp(6.0, 12.0).toDouble();
         final spacing = (width * 0.010).clamp(3.0, 7.0).toDouble();
+        final actionGap = (spacing * 5.0).clamp(24.0, 42.0).toDouble();
+        final actionSpacing = (spacing * 3.7).clamp(18.0, 34.0).toDouble();
         final contentWidth = width - padding * 2;
         final keyWidth = ((contentWidth - spacing * 4) / 5).clamp(38.0, 142.0).toDouble();
-        final keyHeight = ((height - padding * 2 - spacing * (rows.length - 1)) / rows.length)
+        final keyHeight = ((height - padding * 2 - spacing * 2 - actionGap) / rows.length)
             .clamp(28.0, 58.0)
             .toDouble();
         final fontSize = (min(keyWidth, keyHeight) * 0.43).clamp(14.0, 27.0).toDouble();
@@ -1138,26 +1192,61 @@ class _ExamKeypad extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   for (var r = 0; r < rows.length; r++) ...[
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        for (var c = 0; c < rows[r].length; c++) ...[
-                          _keyButton(
-                            context,
-                            label: rows[r][c],
-                            width: rows[r][c] == 'Submit' ? keyWidth * 2.05 : keyWidth,
-                            height: keyHeight,
-                            fontSize: rows[r][c] == 'Submit' || rows[r][c] == 'space'
-                                ? fontSize * 0.78
-                                : fontSize,
-                            onPressed: disabled ? null : _actionFor(rows[r][c]),
-                          ),
-                          if (c != rows[r].length - 1) SizedBox(width: spacing),
+                    if (r == rows.length - 1)
+                      SizedBox(
+                        width: contentWidth,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            _keyButton(
+                              context,
+                              label: 'Delete',
+                              width: keyWidth * 1.35,
+                              height: keyHeight,
+                              fontSize: fontSize * 0.78,
+                              onPressed: disabled ? null : onClear,
+                            ),
+                            _keyButton(
+                              context,
+                              label: '0',
+                              width: keyWidth,
+                              height: keyHeight,
+                              fontSize: fontSize,
+                              onPressed: disabled ? null : () => onTap('0'),
+                            ),
+                            _keyButton(
+                              context,
+                              label: 'Enter',
+                              width: keyWidth * 1.35,
+                              height: keyHeight,
+                              fontSize: fontSize * 0.78,
+                              onPressed: disabled ? null : onSubmit,
+                            ),
+                          ],
+                        ),
+                      )
+                    else
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          for (var c = 0; c < rows[r].length; c++) ...[
+                            _keyButton(
+                              context,
+                              label: rows[r][c],
+                              width: keyWidth,
+                              height: keyHeight,
+                              fontSize: rows[r][c] == 'space'
+                                  ? fontSize * 0.78
+                                  : fontSize,
+                              onPressed: disabled ? null : _actionFor(rows[r][c]),
+                            ),
+                            if (c != rows[r].length - 1) SizedBox(width: spacing),
+                          ],
                         ],
-                      ],
-                    ),
-                    if (r != rows.length - 1) SizedBox(height: spacing),
+                      ),
+                    if (r != rows.length - 1)
+                      SizedBox(height: r == rows.length - 2 ? actionGap : spacing),
                   ],
                 ],
               ),
@@ -1169,8 +1258,8 @@ class _ExamKeypad extends StatelessWidget {
   }
 
   VoidCallback _actionFor(String key) {
-    if (key == 'C') return onClear;
-    if (key == 'Submit') return onSubmit;
+    if (key == 'Delete') return onClear;
+    if (key == 'Enter') return onSubmit;
     if (key == '⌫') return () => onTap('backspace');
     if (key == 'space') return () => onTap('space');
     return () => onTap(key);

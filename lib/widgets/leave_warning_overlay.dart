@@ -18,8 +18,8 @@ class LeaveWarningOverlay extends StatefulWidget {
     required this.onOk,
     required this.onBack,
     this.isBusy = false,
-    this.okText = 'OK',
-    this.backText = 'Back',
+    this.okText = 'Leave',
+    this.backText = 'Stay',
   });
 
   @override

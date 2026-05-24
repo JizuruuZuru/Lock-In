@@ -56,62 +56,56 @@ class NumberPad extends StatelessWidget {
             (panelExtent * 0.038).clamp(8.0, 18.0).toDouble();
         final double effectiveSpacing =
             (spacing ?? (panelExtent * 0.025)).clamp(5.0, 12.0).toDouble();
+        final double actionRowSpacing =
+            (effectiveSpacing * 4.8).clamp(28.0, 56.0).toDouble();
+        final double bottomRowSpacing =
+            (effectiveSpacing * 1.6).clamp(10.0, 22.0).toDouble();
         final double answerHeight = showInputDisplay
             ? (panelExtent * 0.17).clamp(46.0, 82.0).toDouble()
             : 0.0;
 
-        final bottomButtons = <String>[
+        final centerButtons = <String>[
           if (showSignToggle) '+/-',
-          'C',
           '0',
           if (showColonButton) ':',
-          '→',
         ];
-        final bottomButtonCount = bottomButtons.length;
 
         final maxButtonByGridWidth =
             (panelExtent - (panelPadding * 2) - (effectiveSpacing * 2)) / 3;
-        final maxButtonByBottomWidth =
-            (panelExtent -
-                    (panelPadding * 2) -
-                    (effectiveSpacing * (bottomButtonCount - 1))) /
-                bottomButtonCount;
-        final verticalSpacingCount = showInputDisplay ? 4 : 3;
         final maxButtonByHeight =
             (panelExtent -
                     (panelPadding * 2) -
                     answerHeight -
-                    (effectiveSpacing * verticalSpacingCount)) /
+                    (effectiveSpacing * 2) -
+                    (showInputDisplay ? effectiveSpacing : 0) -
+                    actionRowSpacing) /
                 4;
 
         final double computedButtonSize = min(
           buttonSize ?? 100.0,
-          min(
-            maxButtonByGridWidth,
-            min(maxButtonByBottomWidth, maxButtonByHeight),
-          ),
+          min(maxButtonByGridWidth, maxButtonByHeight),
         ).clamp(18.0, 116.0).toDouble();
-
-        final double bottomButtonSize = min(
-          computedButtonSize,
-          ((panelExtent - (panelPadding * 2) -
-                      (effectiveSpacing * (bottomButtonCount - 1)) -
-                      10) /
-                  bottomButtonCount)
-              .clamp(18.0, 116.0),
-        ).toDouble();
 
         final gridWidth = computedButtonSize * 3 + effectiveSpacing * 2;
         final gridHeight = computedButtonSize * 3 + effectiveSpacing * 2;
-        final bottomRowWidth = bottomButtonSize * bottomButtonCount +
-            effectiveSpacing * (bottomButtonCount - 1);
+        final bottomRowWidth = gridWidth;
+        final double bottomButtonSize = computedButtonSize;
+        final double centerButtonSize = centerButtons.length <= 1
+            ? computedButtonSize
+            : min(
+                computedButtonSize * 0.76,
+                ((gridWidth - (computedButtonSize * 2) -
+                            (bottomRowSpacing * 4)) /
+                        centerButtons.length)
+                    .clamp(18.0, computedButtonSize),
+              ).toDouble();
         // Add a small safety buffer so Flutter debug mode never shows the
         // yellow/black RenderFlex overflow stripes from fractional pixel rounding.
         final contentHeight = panelPadding * 2 +
             answerHeight +
             (showInputDisplay ? effectiveSpacing : 0) +
             gridHeight +
-            effectiveSpacing +
+            actionRowSpacing +
             bottomButtonSize +
             18;
         final panelHeight = contentHeight.clamp(120.0, 640.0).toDouble();
@@ -206,22 +200,39 @@ class NumberPad extends StatelessWidget {
                       ],
                     ),
                   ),
-                  SizedBox(height: effectiveSpacing),
+                  SizedBox(height: actionRowSpacing),
                   SizedBox(
                     width: bottomRowWidth,
                     child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        for (var index = 0; index < bottomButtons.length; index++) ...[
-                          _buttonForLabel(
-                            bottomButtons[index],
-                            bottomButtonSize,
-                            buttonFontSize: buttonFontSize,
-                            actionFontSize: actionFontSize,
-                          ),
-                          if (index != bottomButtons.length - 1)
-                            SizedBox(width: effectiveSpacing),
-                        ],
+                        _buttonForLabel(
+                          'Delete',
+                          bottomButtonSize,
+                          buttonFontSize: buttonFontSize,
+                          actionFontSize: actionFontSize,
+                        ),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            for (var index = 0; index < centerButtons.length; index++) ...[
+                              _buttonForLabel(
+                                centerButtons[index],
+                                centerButtonSize,
+                                buttonFontSize: buttonFontSize,
+                                actionFontSize: actionFontSize,
+                              ),
+                              if (index != centerButtons.length - 1)
+                                SizedBox(width: bottomRowSpacing),
+                            ],
+                          ],
+                        ),
+                        _buttonForLabel(
+                          'Enter',
+                          bottomButtonSize,
+                          buttonFontSize: buttonFontSize,
+                          actionFontSize: actionFontSize,
+                        ),
                       ],
                     ),
                   ),
@@ -249,14 +260,14 @@ class NumberPad extends StatelessWidget {
           action: _toggleSign,
           fontSize: actionFontSize,
         );
-      case 'C':
+      case 'Delete':
         return _uniformButton(
           label,
           size,
           action: onClear,
           fontSize: actionFontSize,
         );
-      case '→':
+      case 'Enter':
         return _uniformButton(
           label,
           size,

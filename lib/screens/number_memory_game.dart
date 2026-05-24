@@ -244,6 +244,7 @@ class _NumberMemoryGameState extends State<NumberMemoryGame>
 
     if (state == AppLifecycleState.inactive ||
         state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden ||
         state == AppLifecycleState.detached) {
       unawaited(_stopFaceProctor());
       _didLeaveApp = true;
@@ -622,8 +623,10 @@ class _NumberMemoryGameState extends State<NumberMemoryGame>
                     title: 'Warning',
                     message: _leaveWarningMessage,
                     isBusy: _processingLeaveAttempt,
-                    onOk: _restartFromLeaveWarning,
-                    onBack: _backFromLeaveWarning,
+                    okText: 'Leave',
+                    backText: 'Stay',
+                    onOk: _backFromLeaveWarning,
+                    onBack: _restartFromLeaveWarning,
                   ),
                 ),
             ],
