@@ -1038,7 +1038,6 @@ class _FractionsGameState extends State<FractionsGame> {
                           await saveScore();
                         }
                         if (!mounted) return;
-                        Navigator.of(context).maybePop();
                       },
                       onStay: () {
                         startGame();
@@ -1575,7 +1574,6 @@ class _FractionAnswerPad extends StatelessWidget {
     final padding = (width * 0.022).clamp(6.0, 12.0).toDouble();
     final spacing = (width * 0.012).clamp(3.0, 7.0).toDouble();
     final actionGap = (spacing * 5.0).clamp(24.0, 44.0).toDouble();
-    final actionSpacing = (spacing * 3.7).clamp(18.0, 34.0).toDouble();
     final contentWidth = width - padding * 2;
 
     final rows = const [

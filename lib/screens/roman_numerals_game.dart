@@ -445,7 +445,6 @@ class _RomanNumeralsGameState extends State<RomanNumeralsGame> {
                           await saveScore();
                         }
                         if (!mounted) return;
-                        Navigator.of(context).maybePop();
                       },
                       onStay: () {
                         startGame();

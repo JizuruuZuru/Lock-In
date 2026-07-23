@@ -516,7 +516,6 @@ class _RoundingNumbersGameState extends State<RoundingNumbersGame> {
                           await saveScore();
                         }
                         if (!mounted) return;
-                        Navigator.of(context).maybePop();
                       },
                       onStay: () {
                         startGame();

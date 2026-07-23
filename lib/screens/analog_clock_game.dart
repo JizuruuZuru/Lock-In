@@ -830,7 +830,6 @@ class _AnalogClockGameState extends State<AnalogClockGame>
                           await saveScore();
                         }
                         if (!mounted) return;
-                        Navigator.of(context).maybePop();
                       },
                       onStay: () {
                         startGame();

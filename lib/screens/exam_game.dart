@@ -809,7 +809,6 @@ class _ExamGameState extends State<ExamGame> {
                           await saveScore();
                         }
                         if (!mounted) return;
-                        Navigator.of(context).maybePop();
                       },
                       onStay: () {
                         startGame();
@@ -1161,7 +1160,6 @@ class _ExamKeypad extends StatelessWidget {
         final padding = (width * 0.014).clamp(6.0, 12.0).toDouble();
         final spacing = (width * 0.010).clamp(3.0, 7.0).toDouble();
         final actionGap = (spacing * 5.0).clamp(24.0, 42.0).toDouble();
-        final actionSpacing = (spacing * 3.7).clamp(18.0, 34.0).toDouble();
         final contentWidth = width - padding * 2;
         final keyWidth = ((contentWidth - spacing * 4) / 5).clamp(38.0, 142.0).toDouble();
         final keyHeight = ((height - padding * 2 - spacing * 2 - actionGap) / rows.length)

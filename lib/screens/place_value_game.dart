@@ -500,7 +500,6 @@ class _PlaceValueGameState extends State<PlaceValueGame> {
                           await saveScore();
                         }
                         if (!mounted) return;
-                        Navigator.of(context).maybePop();
                       },
                       onStay: () {
                         startGame();

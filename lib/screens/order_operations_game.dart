@@ -577,7 +577,6 @@ class _OrderOperationsGameState extends State<OrderOperationsGame> {
                           await saveScore();
                         }
                         if (!mounted) return;
-                        Navigator.of(context).maybePop();
                       },
                       onStay: () {
                         startGame();

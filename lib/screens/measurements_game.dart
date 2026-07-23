@@ -826,7 +826,6 @@ class _MeasurementsGameState extends State<MeasurementsGame> {
                           await saveScore();
                         }
                         if (!mounted) return;
-                        Navigator.of(context).maybePop();
                       },
                       onStay: () {
                         startGame();
@@ -1863,7 +1862,6 @@ class _MeasurementAnswerPad extends StatelessWidget {
         final padding = (width * 0.020).clamp(6.0, 12.0).toDouble();
         final spacing = (width * 0.010).clamp(3.0, 7.0).toDouble();
         final actionGap = (spacing * 5.0).clamp(24.0, 44.0).toDouble();
-        final actionSpacing = (spacing * 3.8).clamp(18.0, 36.0).toDouble();
         final rows = const [
           ['1', '2', '3', '.'],
           ['4', '5', '6', 'SPACE'],
@@ -2095,7 +2093,6 @@ class _CupPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = 4;
     final fill = Paint()..color = const Color(0x664CAF50);
-    final amount = (value.clamp(1, 4) / 4);
     canvas.drawRRect(RRect.fromRectAndRadius(rect, const Radius.circular(16)), fill);
     canvas.drawRRect(RRect.fromRectAndRadius(rect, const Radius.circular(16)), border);
     for (var i = 1; i <= 4; i++) {
