@@ -28,10 +28,16 @@ class SoundService {
     // 🔁 Redirected groups – kept empty, never accessed
     'bgm_login': [],
     'bgm_register': [],
+    // bgm_english_1.mp3 / bgm_english_2.mp3 are documented in
+    // assets/sounds/README.md but were never actually added to the
+    // project (not on disk, not declared in pubspec.yaml). Requesting
+    // them threw an uncaught AudioPlayerException/MediaError, especially
+    // on web. Left empty — and redirected to bgm_home below — until real
+    // tracks are supplied; see README.md for the expected filenames.
+    'bgm_english': [],
 
     // Other BGM groups
     'bgm_math': ['bgm_math_1.mp3', 'bgm_math_2.mp3'],
-    'bgm_english': ['bgm_english_1.mp3', 'bgm_english_2.mp3'],
     'bgm_memory': ['bgm_memory_1.mp3', 'bgm_memory_2.mp3'],
 
     // SFX groups
@@ -42,13 +48,14 @@ class SoundService {
     'leave_warning': ['leave_warning.wav'],
   };
 
-  // 🔁 Redirect login & register to home group
+  // 🔁 Redirect login, register, and english to the home group — english
+  // doesn't have its own tracks yet (see the 'bgm_english' comment above).
   static const Map<BgmPage, String> _bgmGroupKey = {
     BgmPage.home: 'bgm_home',
     BgmPage.login: 'bgm_home',
     BgmPage.register: 'bgm_home',
     BgmPage.math: 'bgm_math',
-    BgmPage.english: 'bgm_english',
+    BgmPage.english: 'bgm_home',
     BgmPage.memory: 'bgm_memory',
   };
 

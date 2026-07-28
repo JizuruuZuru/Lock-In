@@ -40,6 +40,7 @@ Future<String> _currentPlayerName(User user) async {
 Future<void> updateLeaderboardEntry({
   required String gameName,
   required int newScore,
+  String? difficulty,
 }) async {
   final user = FirebaseAuth.instance.currentUser;
   if (user == null) return;
@@ -80,6 +81,7 @@ Future<void> updateLeaderboardEntry({
         'game': gameName,
         'gameKey': safeGameId,
         'score': newScore,
+        if (difficulty != null) 'difficulty': difficulty,
         'timestamp': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       },

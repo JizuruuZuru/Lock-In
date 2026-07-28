@@ -1,8 +1,10 @@
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../services/sound_service.dart';
+import '../utils/responsive_layout.dart';
 
 class NumberPad extends StatelessWidget {
   final String input;
@@ -47,15 +49,19 @@ class NumberPad extends StatelessWidget {
             ? constraints.maxHeight
             : fallbackSize;
 
+        final bool desktop = isDesktopLayout(maxAvailableWidth);
+
         final double panelExtent =
             (panelSize ?? min(maxAvailableWidth, maxAvailableHeight))
                 .clamp(150.0, 560.0)
                 .toDouble();
 
-        final double panelPadding =
-            (panelExtent * 0.038).clamp(8.0, 18.0).toDouble();
-        final double effectiveSpacing =
-            (spacing ?? (panelExtent * 0.025)).clamp(5.0, 12.0).toDouble();
+        final double panelPadding = desktop
+            ? (panelExtent * 0.024).clamp(6.0, 12.0).toDouble()
+            : (panelExtent * 0.038).clamp(8.0, 18.0).toDouble();
+        final double effectiveSpacing = desktop
+            ? (spacing ?? (panelExtent * 0.016)).clamp(4.0, 8.0).toDouble()
+            : (spacing ?? (panelExtent * 0.025)).clamp(5.0, 12.0).toDouble();
         final double actionRowSpacing =
             (effectiveSpacing * 4.8).clamp(28.0, 56.0).toDouble();
         final double bottomRowSpacing =
@@ -109,14 +115,23 @@ class NumberPad extends StatelessWidget {
             bottomButtonSize +
             18;
         final panelHeight = contentHeight.clamp(120.0, 640.0).toDouble();
-        final double answerFontSize =
-            (computedButtonSize * 0.38).clamp(18.0, 34.0).toDouble();
-        final double buttonFontSize =
-            (computedButtonSize * 0.34).clamp(16.0, 34.0).toDouble();
-        final double actionFontSize =
-            (computedButtonSize * 0.27).clamp(14.0, 28.0).toDouble();
+        final double answerFontSize = desktop
+            ? (computedButtonSize * 0.46).clamp(22.0, 40.0).toDouble()
+            : (computedButtonSize * 0.38).clamp(18.0, 34.0).toDouble();
+        final double buttonFontSize = desktop
+            ? (computedButtonSize * 0.42).clamp(20.0, 40.0).toDouble()
+            : (computedButtonSize * 0.34).clamp(16.0, 34.0).toDouble();
+        final double actionFontSize = desktop
+            ? (computedButtonSize * 0.32).clamp(16.0, 32.0).toDouble()
+            : (computedButtonSize * 0.27).clamp(14.0, 28.0).toDouble();
+        final double buttonRadius = desktop
+            ? (computedButtonSize * 0.12).clamp(6.0, 10.0).toDouble()
+            : (computedButtonSize * 0.22).clamp(10.0, 22.0).toDouble();
 
-        return Align(
+        return Focus(
+          autofocus: true,
+          onKeyEvent: _handleKeyEvent,
+          child: Align(
           alignment: alignment,
           child: FittedBox(
             fit: BoxFit.scaleDown,
@@ -129,7 +144,9 @@ class NumberPad extends StatelessWidget {
               decoration: BoxDecoration(
                 color: Colors.white.withValues(alpha: 0.86),
                 borderRadius: BorderRadius.circular(
-                  (panelExtent * 0.065).clamp(18.0, 34.0).toDouble(),
+                  desktop
+                      ? (panelExtent * 0.035).clamp(10.0, 16.0).toDouble()
+                      : (panelExtent * 0.065).clamp(18.0, 34.0).toDouble(),
                 ),
                 border: Border.all(color: const Color(0x1F000000), width: 1.3),
                 boxShadow: const [
@@ -196,6 +213,7 @@ class NumberPad extends StatelessWidget {
                             i.toString(),
                             computedButtonSize,
                             fontSize: buttonFontSize,
+                            radius: buttonRadius,
                           ),
                       ],
                     ),
@@ -211,6 +229,7 @@ class NumberPad extends StatelessWidget {
                           bottomButtonSize,
                           buttonFontSize: buttonFontSize,
                           actionFontSize: actionFontSize,
+                          radius: buttonRadius,
                         ),
                         Row(
                           mainAxisSize: MainAxisSize.min,
@@ -221,6 +240,7 @@ class NumberPad extends StatelessWidget {
                                 centerButtonSize,
                                 buttonFontSize: buttonFontSize,
                                 actionFontSize: actionFontSize,
+                                radius: buttonRadius,
                               ),
                               if (index != centerButtons.length - 1)
                                 SizedBox(width: bottomRowSpacing),
@@ -232,6 +252,7 @@ class NumberPad extends StatelessWidget {
                           bottomButtonSize,
                           buttonFontSize: buttonFontSize,
                           actionFontSize: actionFontSize,
+                          radius: buttonRadius,
                         ),
                       ],
                     ),
@@ -241,9 +262,76 @@ class NumberPad extends StatelessWidget {
               ),
             ),
           ),
+          ),
         );
       },
     );
+  }
+
+  KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    if (isDisabled) return KeyEventResult.ignored;
+
+    final key = event.logicalKey;
+    if (key == LogicalKeyboardKey.backspace) {
+      onClear();
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.enter || key == LogicalKeyboardKey.numpadEnter) {
+      onSubmit();
+      return KeyEventResult.handled;
+    }
+    if (showSignToggle &&
+        (key == LogicalKeyboardKey.minus ||
+            key == LogicalKeyboardKey.numpadSubtract)) {
+      _toggleSign();
+      return KeyEventResult.handled;
+    }
+
+    final digit = _digitForKey(key);
+    if (digit != null) {
+      onNumberTap(digit);
+      return KeyEventResult.handled;
+    }
+    if (showColonButton &&
+        (key == LogicalKeyboardKey.semicolon || event.character == ':')) {
+      onNumberTap(':');
+      return KeyEventResult.handled;
+    }
+
+    return KeyEventResult.ignored;
+  }
+
+  String? _digitForKey(LogicalKeyboardKey key) {
+    const digitKeys = [
+      LogicalKeyboardKey.digit0,
+      LogicalKeyboardKey.digit1,
+      LogicalKeyboardKey.digit2,
+      LogicalKeyboardKey.digit3,
+      LogicalKeyboardKey.digit4,
+      LogicalKeyboardKey.digit5,
+      LogicalKeyboardKey.digit6,
+      LogicalKeyboardKey.digit7,
+      LogicalKeyboardKey.digit8,
+      LogicalKeyboardKey.digit9,
+    ];
+    const numpadKeys = [
+      LogicalKeyboardKey.numpad0,
+      LogicalKeyboardKey.numpad1,
+      LogicalKeyboardKey.numpad2,
+      LogicalKeyboardKey.numpad3,
+      LogicalKeyboardKey.numpad4,
+      LogicalKeyboardKey.numpad5,
+      LogicalKeyboardKey.numpad6,
+      LogicalKeyboardKey.numpad7,
+      LogicalKeyboardKey.numpad8,
+      LogicalKeyboardKey.numpad9,
+    ];
+    final digitIndex = digitKeys.indexOf(key);
+    if (digitIndex != -1) return digitIndex.toString();
+    final numpadIndex = numpadKeys.indexOf(key);
+    if (numpadIndex != -1) return numpadIndex.toString();
+    return null;
   }
 
   Widget _buttonForLabel(
@@ -251,6 +339,7 @@ class NumberPad extends StatelessWidget {
     double size, {
     required double buttonFontSize,
     required double actionFontSize,
+    required double radius,
   }) {
     switch (label) {
       case '+/-':
@@ -259,6 +348,7 @@ class NumberPad extends StatelessWidget {
           size,
           action: _toggleSign,
           fontSize: actionFontSize,
+          radius: radius,
         );
       case 'Delete':
         return _uniformButton(
@@ -266,6 +356,7 @@ class NumberPad extends StatelessWidget {
           size,
           action: onClear,
           fontSize: actionFontSize,
+          radius: radius,
         );
       case 'Enter':
         return _uniformButton(
@@ -273,6 +364,7 @@ class NumberPad extends StatelessWidget {
           size,
           action: onSubmit,
           fontSize: actionFontSize,
+          radius: radius,
         );
       case ':':
         return _uniformButton(
@@ -280,6 +372,7 @@ class NumberPad extends StatelessWidget {
           size,
           action: () => onNumberTap(':'),
           fontSize: buttonFontSize,
+          radius: radius,
         );
       default:
         return _uniformButton(
@@ -287,6 +380,7 @@ class NumberPad extends StatelessWidget {
           size,
           action: () => onNumberTap(label),
           fontSize: buttonFontSize,
+          radius: radius,
         );
     }
   }
@@ -302,6 +396,7 @@ class NumberPad extends StatelessWidget {
     double size, {
     VoidCallback? action,
     required double fontSize,
+    required double radius,
   }) {
     final buttonAction = action ?? () => onNumberTap(label);
 
@@ -314,9 +409,7 @@ class NumberPad extends StatelessWidget {
           padding: EdgeInsets.zero,
           minimumSize: Size(size, size),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(
-              (size * 0.22).clamp(10.0, 22.0).toDouble(),
-            ),
+            borderRadius: BorderRadius.circular(radius),
           ),
           textStyle: TextStyle(
             fontSize: fontSize,

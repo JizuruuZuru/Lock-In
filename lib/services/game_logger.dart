@@ -30,6 +30,7 @@ class GameLogger {
   static Future<void> logGame({
     required String gameName,
     required int score,
+    String? difficulty,
   }) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
@@ -47,6 +48,7 @@ class GameLogger {
       'game': gameName,
       'gameKey': gameKey,
       'score': score,
+      if (difficulty != null) 'difficulty': difficulty,
       'sessionId': _currentSessionId,
       'timestamp': now,
       'updatedAt': now,

@@ -2,8 +2,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
-import 'screens/home_menu.dart';
-import 'screens/player_onboarding_page.dart';
+import 'screens/home/home_menu.dart';
+import 'screens/onboarding/player_onboarding_page.dart';
 import 'widgets/animated_shape_background.dart';
 
 class OnboardingGate extends StatefulWidget {
@@ -27,6 +27,7 @@ class _OnboardingGateState extends State<OnboardingGate> {
     final firestore = FirebaseFirestore.instance;
 
     User? user = auth.currentUser;
+    final isReturningUser = user != null;
     if (user == null) {
       final credential = await auth.signInAnonymously();
       user = credential.user;
@@ -37,27 +38,37 @@ class _OnboardingGateState extends State<OnboardingGate> {
     }
 
     final userRef = firestore.collection('users').doc(user.uid);
-    final snapshot = await userRef.get();
-    final data = snapshot.data() ?? <String, dynamic>{};
+    Map<String, dynamic> data = <String, dynamic>{};
 
-    if (!snapshot.exists) {
-      await userRef.set({
-        'uid': user.uid,
-        'email': user.email,
-        'isAnonymous': user.isAnonymous,
-        'authProvider': user.isAnonymous ? 'anonymous' : 'email',
-        'createdAt': FieldValue.serverTimestamp(),
-        'profile_complete': false,
-        'onboarding_step': 'name',
-      }, SetOptions(merge: true));
-    } else {
-      await userRef.set({
-        'uid': user.uid,
-        'email': user.email,
-        'isAnonymous': user.isAnonymous,
-        'authProvider': user.isAnonymous ? 'anonymous' : 'email',
-        'lastSeenAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+    try {
+      final snapshot = await userRef.get();
+      data = snapshot.data() ?? <String, dynamic>{};
+
+      if (!snapshot.exists) {
+        await userRef.set({
+          'uid': user.uid,
+          'email': user.email,
+          'isAnonymous': user.isAnonymous,
+          'authProvider': user.isAnonymous ? 'anonymous' : 'email',
+          'createdAt': FieldValue.serverTimestamp(),
+          'profile_complete': false,
+          'onboarding_step': 'name',
+        }, SetOptions(merge: true));
+      } else {
+        await userRef.set({
+          'uid': user.uid,
+          'email': user.email,
+          'isAnonymous': user.isAnonymous,
+          'authProvider': user.isAnonymous ? 'anonymous' : 'email',
+          'lastSeenAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      }
+    } catch (error) {
+      // Offline (or Firestore unreachable). A brand-new player can't be
+      // created without a network round trip, so surface the error for
+      // them. A returning player already has a local profile cache, so
+      // let them straight into the app instead of blocking on Firestore.
+      if (!isReturningUser) rethrow;
     }
 
     final hasName = ((data['firstName'] ?? '').toString().trim().isNotEmpty &&
@@ -66,7 +77,8 @@ class _OnboardingGateState extends State<OnboardingGate> {
         (data['username'] ?? '').toString().trim().isNotEmpty;
     final hasAge = data['age'] is int ||
         int.tryParse((data['age'] ?? '').toString()) != null;
-    final isComplete = data['profile_complete'] == true && hasName && hasAge;
+    final isComplete = (isReturningUser && data.isEmpty) ||
+        (data['profile_complete'] == true && hasName && hasAge);
 
     return _OnboardingGateResult(
       user: user,

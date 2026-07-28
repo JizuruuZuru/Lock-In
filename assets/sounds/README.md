@@ -40,7 +40,9 @@ Played when `LevelUpPopup` appears:
 - Math Game:
   - `bgm_math_1.mp3`
   - `bgm_math_2.mp3`
-- English Grammar:
+- English Grammar (not supplied yet — currently falls back to the Home
+  tracks in `sound_service.dart`; drop these two files in and switch
+  `_bgmGroupKey[BgmPage.english]` back to `'bgm_english'` once added):
   - `bgm_english_1.mp3`
   - `bgm_english_2.mp3`
 - Number Memory:
