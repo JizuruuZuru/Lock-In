@@ -20,7 +20,7 @@ import '../../widgets/hearts_display.dart';
 import '../../widgets/incorrect_splash.dart';
 import '../../widgets/animated_shape_background.dart';
 import '../../widgets/difficulty_mode_selector.dart';
-import '../../widgets/app_brightness_overlay.dart';
+import '../../widgets/app_brightness_overlay.dart'; 
 import '../../widgets/game_timer.dart';
 import '../../widgets/leave_warning_overlay.dart';
 import '../../widgets/number_pad.dart';
