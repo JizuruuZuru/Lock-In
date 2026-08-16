@@ -152,7 +152,7 @@ class _GameOverPopupState extends State<GameOverPopup>
                 width: 36,
                 height: 36,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF44336).withOpacity(0.15),
+                  color: const Color(0xFFF44336).withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(50),
                 ),
                 child: const Icon(
@@ -171,7 +171,7 @@ class _GameOverPopupState extends State<GameOverPopup>
           width: 80,
           height: 80,
           decoration: BoxDecoration(
-            color: const Color(0xFFF44336).withOpacity(0.1),
+            color: const Color(0xFFF44336).withValues(alpha: 0.1),
             borderRadius: BorderRadius.circular(50),
           ),
           child: const Icon(
@@ -210,7 +210,7 @@ class _GameOverPopupState extends State<GameOverPopup>
           style: TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.w600,
-            color: const Color(0xFFF44336).withOpacity(0.8),
+            color: const Color(0xFFF44336).withValues(alpha: 0.8),
           ),
         ),
         const SizedBox(height: 24),
@@ -270,7 +270,7 @@ class _GameOverPopupState extends State<GameOverPopup>
                 width: 36,
                 height: 36,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF44336).withOpacity(0.15),
+                  color: const Color(0xFFF44336).withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(50),
                 ),
                 child: const Icon(
@@ -288,10 +288,10 @@ class _GameOverPopupState extends State<GameOverPopup>
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: const Color(0xFFF44336).withOpacity(0.1),
+            color: const Color(0xFFF44336).withValues(alpha: 0.1),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
-              color: const Color(0xFFF44336).withOpacity(0.5),
+              color: const Color(0xFFF44336).withValues(alpha: 0.5),
               width: 2,
             ),
           ),
@@ -335,10 +335,10 @@ class _GameOverPopupState extends State<GameOverPopup>
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: const Color(0xFF4CAF50).withOpacity(0.1),
+            color: const Color(0xFF4CAF50).withValues(alpha: 0.1),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
-              color: const Color(0xFF4CAF50).withOpacity(0.5),
+              color: const Color(0xFF4CAF50).withValues(alpha: 0.5),
               width: 2,
             ),
           ),

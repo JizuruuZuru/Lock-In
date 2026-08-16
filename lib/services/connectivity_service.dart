@@ -18,4 +18,16 @@ class ConnectivityService {
       return true;
     }
   }
+
+  /// Current offline state, then an update every time it changes.
+  ///
+  /// Emits immediately so a banner can paint the right state on its first
+  /// frame instead of waiting for the connection to change.
+  static Stream<bool> offlineStream() async* {
+    yield await isOffline();
+    yield* Connectivity()
+        .onConnectivityChanged
+        .asyncMap((_) => isOffline())
+        .distinct();
+  }
 }

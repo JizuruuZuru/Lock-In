@@ -27,6 +27,8 @@ import '../../widgets/hearts_display.dart';
 import '../../widgets/incorrect_splash.dart';
 import '../../widgets/leave_warning_overlay.dart';
 import '../../widgets/level_up_popup.dart';
+import '../../widgets/tappable_word_text.dart';
+import '../../widgets/word_lookup_sheet.dart';
 
 class SubjectQuizGame extends StatefulWidget {
   final SubjectQuizType subject;
@@ -920,16 +922,56 @@ class _SubjectQuizGameState extends State<SubjectQuizGame> {
             ),
           ),
           const SizedBox(height: 12),
-          Text(
-            question.prompt,
-            textAlign: TextAlign.center,
+          // Words in the question are tappable: tapping one looks it up in the
+          // dictionary API so a student who is only blocked by vocabulary can
+          // unblock themselves without leaving the quiz.
+          TappableWordText(
+            text: question.prompt,
+            onWordTap: _lookUpWord,
+            highlightColor: config.accentColor,
             style: const TextStyle(
               fontSize: 27,
               fontWeight: FontWeight.w900,
             ),
           ),
+          const SizedBox(height: 10),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.touch_app_rounded,
+                  size: 14, color: config.accentColor.withValues(alpha: 0.8)),
+              const SizedBox(width: 5),
+              Text(
+                'Tap an underlined word to see what it means',
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700,
+                  color: config.accentColor.withValues(alpha: 0.8),
+                ),
+              ),
+            ],
+          ),
         ],
       ),
+    );
+  }
+
+  /// Opens the dictionary lookup sheet for [word].
+  ///
+  /// The quiz timer keeps running, so this is a help affordance rather than a
+  /// pause button — looking up a word costs the student time, same as thinking
+  /// about it would.
+  Future<void> _lookUpWord(String word) async {
+    if (isGameOver || !hasStarted) return;
+    SoundService().playButtonSoundNow();
+
+    final config = _config;
+    await WordLookupSheet.show(
+      context,
+      word: word,
+      inkColor: config.inkColor,
+      accentColor: config.accentColor,
+      panelColor: config.panelColor,
     );
   }
 

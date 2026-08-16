@@ -3,7 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'register_page.dart';
-import '../home/home_menu.dart';
+import '../../app_gate.dart';
 import '../../services/sound_service.dart';
 import '../../utils/name_credential.dart';
 import '../../widgets/animated_shape_background.dart';
@@ -96,9 +96,23 @@ class _LoginPageState extends State<LoginPage> {
 
       final user = credential.user;
       if (user != null) {
+        final userRef =
+            FirebaseFirestore.instance.collection('users').doc(user.uid);
+
+        // An admin can deactivate an account; a valid password must not be
+        // enough to get back in once they have.
+        final existing = await userRef.get();
+        if (existing.data()?['disabled'] == true) {
+          await _auth.signOut();
+          await _showErrorDialog(
+            'This account has been deactivated by a teacher. Please ask them to restore it.',
+          );
+          return;
+        }
+
         final fullName = '$firstName $lastName'.trim();
         await user.updateDisplayName(fullName);
-        await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+        await userRef.set({
           'uid': user.uid,
           'firstName': firstName,
           'lastName': lastName,
@@ -115,9 +129,12 @@ class _LoginPageState extends State<LoginPage> {
       }
 
       if (!mounted) return;
-      Navigator.pushReplacement(
+      // Route through the gate rather than jumping straight to HomeMenu, so an
+      // admin signing in here still lands in the admin panel.
+      Navigator.pushAndRemoveUntil(
         context,
-        MaterialPageRoute(builder: (_) => const HomeMenu()),
+        MaterialPageRoute(builder: (_) => const AppGate()),
+        (route) => false,
       );
     } on FirebaseAuthException catch (e) {
       if (!mounted) return;
@@ -291,7 +308,8 @@ class _LoginPageState extends State<LoginPage> {
                         ),
                         const SizedBox(height: 8),
                         const Text(
-                          'Login using your first name, last name, and password.',
+                          'Login using your first name, last name, and password. '
+                          'Teachers and admins sign in here too.',
                           style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w600,

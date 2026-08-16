@@ -26,6 +26,7 @@ import '../math/order_operations_game.dart';
 import '../math/fractions_game.dart';
 import '../math/measurements_game.dart';
 import '../exams/exam_game.dart';
+import '../admin/admin_dashboard_page.dart';
 import '../auth/register_page.dart';
 import '../auth/login_page.dart';
 import '../profile/leaderboard_screen.dart';
@@ -35,8 +36,11 @@ import '../science/investigating_and_classifying_game.dart';
 import '../science/life_science_and_plants_game.dart';
 import '../science/materials_and_chemistry_game.dart';
 import '../science/physics_and_forces_game.dart';
+import '../../app_gate.dart';
+import '../../models/app_user_record.dart';
 import '../../services/app_settings_service.dart';
 import '../../services/connectivity_service.dart';
+import '../../services/google_link_service.dart';
 import '../../services/sound_service.dart';
 import '../../utils/responsive_layout.dart';
 import '../../widgets/app_brightness_overlay.dart';
@@ -127,6 +131,10 @@ class _HomeMenuState extends State<HomeMenu> {
   _LessonSubject? _selectedLessonSubject;
   Set<ExamSubjectSelection>? _selectedExamSubject;
   bool _isOffline = false;
+
+  /// True while Google's account chooser is open, so the button cannot be
+  /// tapped twice.
+  bool _isLinkingGoogle = false;
 
   @override
   void initState() {
@@ -2339,6 +2347,83 @@ class _HomeMenuState extends State<HomeMenu> {
     );
   }
 
+  /// Either a "Connect Google account" button or, once connected, a quiet
+  /// status line naming the linked address.
+  Widget _buildGoogleLinkButton() {
+    final service = GoogleLinkService();
+
+    if (service.isCurrentUserLinked) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: const Color(0xFFE8F7EA),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFF4CAF50), width: 2),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.verified_rounded,
+                color: Color(0xFF2E7D32), size: 20),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Google connected\n${service.linkedEmail ?? ''}',
+                style: const TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  height: 1.35,
+                  color: Color(0xFF2E7D32),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return SizedBox(
+      width: double.infinity,
+      child: ElevatedButton.icon(
+        onPressed: _isLinkingGoogle
+            ? null
+            : () async {
+                SoundService().playButtonSoundNow();
+                setState(() => _isLinkingGoogle = true);
+
+                final result = await service.linkGoogleAccount();
+                if (!mounted) return;
+                setState(() => _isLinkingGoogle = false);
+
+                ScaffoldMessenger.of(context)
+                  ..hideCurrentSnackBar()
+                  ..showSnackBar(
+                    SnackBar(
+                      content: Text(result.message),
+                      backgroundColor: result.isSuccess
+                          ? const Color(0xFF2E7D32)
+                          : const Color(0xFF8A6100),
+                    ),
+                  );
+              },
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.white,
+          foregroundColor: const Color(0xFF2F5233),
+        ),
+        icon: _isLinkingGoogle
+            ? const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2.2),
+              )
+            : const Icon(Icons.account_circle_rounded, size: 20),
+        label: Text(
+          _isLinkingGoogle ? 'Opening Google...' : 'Connect Google account',
+        ),
+      ),
+    );
+  }
+
   Widget _buildSettings() {
     final displayName = userData?['username'] ?? 'Guest User';
     final email = user?.email ?? 'Not logged in';
@@ -2412,12 +2497,14 @@ class _HomeMenuState extends State<HomeMenu> {
 
                               if (shouldSignOut == true) {
                                 await _auth.signOut();
-                                if (mounted) {
-                                  setState(() {
-                                    user = null;
-                                    userData = null;
-                                  });
-                                }
+                                if (!mounted) return;
+                                // Back to the start screen, which asks again
+                                // whether they have an account.
+                                Navigator.of(context).pushAndRemoveUntil(
+                                  MaterialPageRoute(
+                                      builder: (_) => const AppGate()),
+                                  (route) => false,
+                                );
                               }
                             },
                             child: const Text('Sign Out'),
@@ -2455,6 +2542,38 @@ class _HomeMenuState extends State<HomeMenu> {
                             child: const Text('Leaderboard'),
                           ),
                         ),
+                        // The "later" half of the sign-up offer: a player who
+                        // skipped connecting Google can do it from here. Once
+                        // connected the button turns into a status line.
+                        if (GoogleLinkService.isSupportedPlatform) ...[
+                          const SizedBox(height: 12),
+                          _buildGoogleLinkButton(),
+                        ],
+                        // Only accounts flagged as admins in Firestore get a
+                        // way into the admin panel from inside the app.
+                        if (userData?['role'] == kAdminRoleValue) ...[
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton.icon(
+                              onPressed: () {
+                                SoundService().playButtonSoundNow();
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => const AdminDashboardPage(),
+                                  ),
+                                );
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF6A3FC4),
+                              ),
+                              icon: const Icon(
+                                  Icons.admin_panel_settings_rounded, size: 20),
+                              label: const Text('Admin Panel'),
+                            ),
+                          ),
+                        ],
                       ],
                     )
                   else

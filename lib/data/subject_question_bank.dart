@@ -95,15 +95,22 @@ class SubjectQuizQuestion {
   }
 }
 
-class _LeveledQuestion {
+/// A question plus the level a player must reach before it can be served.
+class LeveledQuizQuestion {
   final int minLevel;
   final SubjectQuizQuestion question;
 
-  const _LeveledQuestion({
+  const LeveledQuizQuestion({
     required this.minLevel,
     required this.question,
   });
 }
+
+/// The bundled question files were written against the old private name and
+/// there are tens of thousands of `const _LeveledQuestion(...)` literals across
+/// `data/questions/`. Aliasing keeps every one of them compiling while the
+/// class itself becomes public so admin-authored questions can be injected.
+typedef _LeveledQuestion = LeveledQuizQuestion;
 
 class SubjectQuestionBank {
   static const _configs = <SubjectQuizType, SubjectQuizConfig>{
@@ -166,6 +173,40 @@ class SubjectQuestionBank {
     ],
   };
 
+  /// Admin-authored questions loaded from Firestore at startup, keyed by
+  /// subject. They are pooled with [_questions] so teacher-made questions show
+  /// up inside the lessons students already play — no separate mode needed.
+  static final Map<SubjectQuizType, List<LeveledQuizQuestion>> _customQuestions =
+      <SubjectQuizType, List<LeveledQuizQuestion>>{};
+
+  /// Replaces the custom pool for every subject at once. Called by
+  /// `CustomQuestionSync` after it reads the `quiz_questions` collection, and
+  /// again whenever an admin saves a change.
+  static void setCustomQuestions(
+    Map<SubjectQuizType, List<LeveledQuizQuestion>> bySubject,
+  ) {
+    _customQuestions
+      ..clear()
+      ..addAll(bySubject.map(
+        (subject, questions) =>
+            MapEntry(subject, List<LeveledQuizQuestion>.unmodifiable(questions)),
+      ));
+  }
+
+  static void clearCustomQuestions() => _customQuestions.clear();
+
+  /// How many admin-authored questions are currently live for [type].
+  static int customQuestionCountFor(SubjectQuizType type) =>
+      _customQuestions[type]?.length ?? 0;
+
+  /// Bundled questions plus any admin-authored ones for the subject.
+  static List<LeveledQuizQuestion> _poolFor(SubjectQuizType type) {
+    final bundled = _questions[type]!;
+    final custom = _customQuestions[type];
+    if (custom == null || custom.isEmpty) return bundled;
+    return <LeveledQuizQuestion>[...bundled, ...custom];
+  }
+
   static SubjectQuizConfig configFor(SubjectQuizType type) {
     return _configs[type]!;
   }
@@ -175,6 +216,26 @@ class SubjectQuestionBank {
     Set<String>? topics,
   }) {
     return _filteredQuestions(type, topics: topics).length;
+  }
+
+  /// Every distinct topic available for [type], bundled and admin-authored,
+  /// sorted alphabetically.
+  ///
+  /// The admin question editor offers these as suggestions so a new question
+  /// is filed under a topic an existing lesson already asks for — that is what
+  /// makes it show up inside the lesson rather than only in the free-roam quiz.
+  static List<String> topicsFor(SubjectQuizType type) {
+    // Keyed by the normalized form so "Plural Nouns" and "plural  nouns"
+    // collapse to one entry, while the original casing is what gets shown.
+    final byNormalized = <String, String>{};
+    for (final item in _poolFor(type)) {
+      final topic = item.question.topic.trim();
+      if (topic.isEmpty) continue;
+      byNormalized.putIfAbsent(_normalize(topic), () => topic);
+    }
+    final topics = byNormalized.values.toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    return topics;
   }
 
   /// Stable identity for a question, usable as a key to track which ones a
@@ -197,7 +258,7 @@ class SubjectQuestionBank {
   }) {
     final filteredQuestions = _filteredQuestions(subject, topics: topics);
     final allQuestions =
-        filteredQuestions.isEmpty ? _questions[subject]! : filteredQuestions;
+        filteredQuestions.isEmpty ? _poolFor(subject) : filteredQuestions;
     final eligibleQuestions = allQuestions
         .where((item) => item.minLevel <= level)
         .toList(growable: false);
@@ -214,11 +275,11 @@ class SubjectQuestionBank {
     return candidates[random.nextInt(candidates.length)].question.shuffled(random);
   }
 
-  static List<_LeveledQuestion> _filteredQuestions(
+  static List<LeveledQuizQuestion> _filteredQuestions(
     SubjectQuizType subject, {
     Set<String>? topics,
   }) {
-    final allQuestions = _questions[subject]!;
+    final allQuestions = _poolFor(subject);
     if (topics == null || topics.isEmpty) return allQuestions;
 
     final normalizedTopics = topics.map(_normalize).toSet();

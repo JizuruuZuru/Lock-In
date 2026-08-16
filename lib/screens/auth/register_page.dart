@@ -196,6 +196,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
         'age': _age,
         'isAnonymous': false,
         'authProvider': 'email',
+        // Written explicitly so every account carries both access fields. The
+        // security rules read them with a default, but keeping the shape
+        // consistent means an admin promoted by hand in the console only has
+        // to change `role`.
+        'role': 'student',
+        'disabled': false,
         'profile_complete': true,
         'onboarding_step': 'done',
         'accountCreatedAt': FieldValue.serverTimestamp(),
