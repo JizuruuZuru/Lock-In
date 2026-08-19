@@ -13,6 +13,7 @@ import '../../utils/responsive_layout.dart';
 import '../../widgets/offline_banner.dart';
 import 'account_list_page.dart';
 import 'question_list_page.dart';
+import 'api_console_page.dart';
 import 'trivia_import_page.dart';
 
 /// Landing screen of the admin area.
@@ -326,6 +327,14 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
             'Pull ready-made multiple-choice questions over HTTP, preview them, and publish the ones you want into your question bank.',
         color: const Color(0xFFEF6C00),
         onTap: () => _open(const TriviaImportPage()),
+      ),
+      _ActionTile(
+        icon: Icons.lan_rounded,
+        title: 'API Console',
+        description:
+            'Run every endpoint the app uses - GET, POST, PATCH, and DELETE - and read the real request and response for each one.',
+        color: const Color(0xFF1976D2),
+        onTap: () => _open(const ApiConsolePage()),
       ),
     ];
 

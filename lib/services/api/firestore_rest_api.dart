@@ -30,6 +30,35 @@ class RestPublishResult {
   bool get hasFailures => failures.isNotEmpty;
 }
 
+/// One HTTP exchange, kept verbatim so the admin API console and the smoke-test
+/// script can show the real traffic instead of a summary of it.
+class RestCallLog {
+  final String method;
+  final String url;
+  final String requestBody;
+  final String responseBody;
+  final int statusCode;
+
+  const RestCallLog({
+    required this.method,
+    required this.url,
+    this.requestBody = '',
+    this.responseBody = '',
+    this.statusCode = 0,
+  });
+
+  /// `PATCH https://... -> 200`, the one-line form used in list rows and logs.
+  String get summary => '$method $url -> $statusCode';
+}
+
+/// A [runQuestionQuery] result plus the exchange that produced it.
+class RestQueryResult {
+  final List<QuizQuestionRecord> questions;
+  final RestCallLog log;
+
+  const RestQueryResult({required this.questions, required this.log});
+}
+
 /// HTTP client for the **Cloud Firestore REST API** — the project's own
 /// backend, reached over plain HTTPS instead of through the Firestore SDK.
 ///
@@ -47,16 +76,45 @@ class FirestoreRestApi {
   static const Duration timeout = Duration(seconds: 20);
 
   final http.Client _client;
-  final FirebaseAuth _auth;
+
+  /// Left null in tests. Resolved lazily through [_auth] so constructing this
+  /// service never requires Firebase to have been initialized.
+  final FirebaseAuth? _authOverride;
+
+  /// Test seam. When supplied it replaces the Firebase ID token lookup, which
+  /// is what lets the whole REST surface be exercised against a [MockClient]
+  /// with no Firebase app running.
+  final Future<String> Function()? _tokenProvider;
+
+  /// Test seam for the `createdBy` stamp, paired with [_tokenProvider].
+  final String? _uidOverride;
+
   final String projectId;
 
   FirestoreRestApi({
     http.Client? client,
     FirebaseAuth? auth,
     String? projectId,
+    Future<String> Function()? tokenProvider,
+    String? uid,
   })  : _client = client ?? http.Client(),
-        _auth = auth ?? FirebaseAuth.instance,
+        _authOverride = auth,
+        _tokenProvider = tokenProvider,
+        _uidOverride = uid,
         projectId = projectId ?? DefaultFirebaseOptions.currentPlatform.projectId;
+
+  FirebaseAuth get _auth => _authOverride ?? FirebaseAuth.instance;
+
+  /// The signed-in uid, or null when nobody is signed in. Never throws, so a
+  /// missing session degrades the `createdBy` stamp instead of the write.
+  String? get _currentUid {
+    if (_uidOverride != null) return _uidOverride;
+    try {
+      return _auth.currentUser?.uid;
+    } catch (_) {
+      return null;
+    }
+  }
 
   String get _documentsPath => '/v1/projects/$projectId/databases/(default)/documents';
 
@@ -82,7 +140,7 @@ class FirestoreRestApi {
     }
 
     final uri = Uri.https(host, '$_documentsPath/${QuizQuestionRestCodec.collectionId}');
-    final body = jsonEncode({'fields': QuizQuestionRestCodec.toFields(clean, _auth.currentUser?.uid)});
+    final body = jsonEncode({'fields': QuizQuestionRestCodec.toFields(clean, _currentUid)});
 
     final response = await _post(uri, body);
     final json = _decodeObject(response.body);
@@ -136,12 +194,121 @@ class FirestoreRestApi {
     );
   }
 
+  // ----------------------------------------------------------------- PATCH
+
+  /// Updates one question document via **HTTP PATCH**.
+  ///
+  /// Firestore models a partial update as `PATCH` with an `updateMask` naming
+  /// exactly which fields may change. Everything not on the mask is left
+  /// untouched, which is how `createdAt` and `createdBy` survive an edit.
+  Future<RestCallLog> updateQuestion(QuizQuestionRecord record) async {
+    if (record.id.trim().isEmpty) {
+      throw const ApiException('This question has no id, so it cannot be updated.');
+    }
+
+    final clean = record.sanitized();
+    final errors = clean.validate();
+    if (errors.isNotEmpty) {
+      throw ApiException(errors.values.first);
+    }
+
+    final fields = QuizQuestionRestCodec.toUpdateFields(clean);
+    final uri = Uri.https(
+      host,
+      '$_documentsPath/${QuizQuestionRestCodec.collectionId}/${record.id.trim()}',
+      // Uri.https takes a Map, so a repeated key needs the List form.
+      {'updateMask.fieldPaths': fields.keys.toList(growable: false)},
+    );
+    final body = jsonEncode({'fields': fields});
+
+    final response = await _send('PATCH', uri, body: body);
+
+    return RestCallLog(
+      method: 'PATCH',
+      url: uri.toString(),
+      requestBody: _pretty(body),
+      responseBody: _pretty(response.body),
+      statusCode: response.statusCode,
+    );
+  }
+
+  /// Publishes or hides a question over HTTP PATCH, touching only the two
+  /// fields involved rather than rewriting the whole document.
+  Future<RestCallLog> setPublished(String id, bool published) async {
+    if (id.trim().isEmpty) {
+      throw const ApiException('This question has no id, so it cannot be updated.');
+    }
+
+    final fields = <String, dynamic>{
+      'published': {'booleanValue': published},
+      'updatedAt': {'timestampValue': DateTime.now().toUtc().toIso8601String()},
+    };
+    final uri = Uri.https(
+      host,
+      '$_documentsPath/${QuizQuestionRestCodec.collectionId}/${id.trim()}',
+      {'updateMask.fieldPaths': fields.keys.toList(growable: false)},
+    );
+    final body = jsonEncode({'fields': fields});
+
+    final response = await _send('PATCH', uri, body: body);
+
+    return RestCallLog(
+      method: 'PATCH',
+      url: uri.toString(),
+      requestBody: _pretty(body),
+      responseBody: _pretty(response.body),
+      statusCode: response.statusCode,
+    );
+  }
+
+  // ---------------------------------------------------------------- DELETE
+
+  /// Removes one question document via **HTTP DELETE**.
+  ///
+  /// Firestore answers a successful delete with `200` and an empty JSON object,
+  /// so there is no body to parse — the status code is the result.
+  Future<RestCallLog> deleteQuestion(String id) async {
+    if (id.trim().isEmpty) {
+      throw const ApiException('This question has no id, so it cannot be deleted.');
+    }
+
+    final uri = Uri.https(
+      host,
+      '$_documentsPath/${QuizQuestionRestCodec.collectionId}/${id.trim()}',
+    );
+
+    final response = await _send('DELETE', uri);
+
+    return RestCallLog(
+      method: 'DELETE',
+      url: uri.toString(),
+      responseBody: response.body.trim().isEmpty ? '{}' : _pretty(response.body),
+      statusCode: response.statusCode,
+    );
+  }
+
+  // ------------------------------------------------------------------ POST
+
   /// Structured query over HTTP POST (`documents:runQuery`).
   ///
-  /// Used by the admin question browser's server-side search, and it doubles
-  /// as the proof that the app reads through the REST API too, not only the
-  /// SDK.
+  /// Firestore models search as a POST because the query travels in the request
+  /// body. Driven from the admin API console, it is how the app *reads* through
+  /// the REST API rather than only writing through it.
   Future<List<QuizQuestionRecord>> runQuestionQuery({
+    SubjectQuizType? subject,
+    bool? publishedOnly,
+    int limit = 50,
+  }) async {
+    final result = await runQuestionQueryDetailed(
+      subject: subject,
+      publishedOnly: publishedOnly,
+      limit: limit,
+    );
+    return result.questions;
+  }
+
+  /// Same query, but also returns the exchange so the console can show it.
+  Future<RestQueryResult> runQuestionQueryDetailed({
     SubjectQuizType? subject,
     bool? publishedOnly,
     int limit = 50,
@@ -179,13 +346,14 @@ class FirestoreRestApi {
       'limit': limit,
     };
 
-    final response = await _post(uri, jsonEncode({'structuredQuery': structuredQuery}));
+    final body = jsonEncode({'structuredQuery': structuredQuery});
+    final response = await _post(uri, body);
     final decoded = jsonDecode(response.body);
     if (decoded is! List) {
       throw const ApiException('Firestore returned an unexpected query result.');
     }
 
-    return decoded
+    final questions = decoded
         .whereType<Map<String, dynamic>>()
         // Rows without a `document` key are read-time markers for "no match".
         .where((row) => row['document'] is Map<String, dynamic>)
@@ -193,24 +361,43 @@ class FirestoreRestApi {
               row['document'] as Map<String, dynamic>,
             ))
         .toList(growable: false);
+
+    return RestQueryResult(
+      questions: questions,
+      log: RestCallLog(
+        method: 'POST',
+        url: uri.toString(),
+        requestBody: _pretty(body),
+        responseBody: _pretty(response.body),
+        statusCode: response.statusCode,
+      ),
+    );
   }
 
   // ------------------------------------------------------------- internals
 
-  Future<http.Response> _post(Uri uri, String body) async {
+  Future<http.Response> _post(Uri uri, String body) =>
+      _send('POST', uri, body: body);
+
+  /// The one place every REST call goes through, so authentication, timeouts,
+  /// and status-code handling are identical for POST, PATCH, and DELETE.
+  Future<http.Response> _send(String method, Uri uri, {String? body}) async {
     final token = await _idToken();
+    final headers = <String, String>{
+      'Accept': 'application/json',
+      'Authorization': 'Bearer $token',
+      if (body != null) 'Content-Type': 'application/json',
+    };
+
     try {
-      final response = await _client
-          .post(
-            uri,
-            headers: {
-              'Content-Type': 'application/json',
-              'Accept': 'application/json',
-              'Authorization': 'Bearer $token',
-            },
-            body: body,
-          )
-          .timeout(timeout);
+      final Future<http.Response> call = switch (method) {
+        'POST' => _client.post(uri, headers: headers, body: body),
+        'PATCH' => _client.patch(uri, headers: headers, body: body),
+        'DELETE' => _client.delete(uri, headers: headers),
+        _ => throw ApiException("Unsupported HTTP method $method."),
+      };
+
+      final response = await call.timeout(timeout);
 
       if (response.statusCode < 200 || response.statusCode >= 300) {
         throw ApiException.fromStatus(
@@ -227,6 +414,9 @@ class FirestoreRestApi {
   }
 
   Future<String> _idToken() async {
+    final provider = _tokenProvider;
+    if (provider != null) return provider();
+
     final user = _auth.currentUser;
     if (user == null) {
       throw const ApiException('You must be signed in to save to the server.');
@@ -236,6 +426,16 @@ class FirestoreRestApi {
       throw const ApiException('Could not get a sign-in token. Try signing in again.');
     }
     return token;
+  }
+
+  /// Re-indents a JSON payload for display. Falls back to the raw text, since a
+  /// body that will not parse is exactly the one worth showing verbatim.
+  String _pretty(String body) {
+    try {
+      return const JsonEncoder.withIndent('  ').convert(jsonDecode(body));
+    } catch (_) {
+      return body;
+    }
   }
 
   /// Firestore reports failures as `{"error": {"message": "..."}}`.
@@ -300,6 +500,19 @@ class QuizQuestionRestCodec {
       'createdAt': {'timestampValue': now},
       'updatedAt': {'timestampValue': now},
     };
+  }
+
+  /// Fields an edit is allowed to rewrite, used as both the PATCH body and the
+  /// `updateMask`. `createdAt` and `createdBy` are deliberately absent so an
+  /// update cannot rewrite who first authored the question or when.
+  static Map<String, dynamic> toUpdateFields(QuizQuestionRecord record) {
+    final fields = toFields(record, null);
+    fields.remove('createdAt');
+    fields.remove('createdBy');
+    fields['updatedAt'] = {
+      'timestampValue': DateTime.now().toUtc().toIso8601String(),
+    };
+    return fields;
   }
 
   static QuizQuestionRecord fromDocument(Map<String, dynamic> document) {

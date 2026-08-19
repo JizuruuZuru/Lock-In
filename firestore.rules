@@ -76,6 +76,14 @@ service cloud.firestore {
         allow read: if isSelf(uid) || isAdmin();
         allow write: if isSelf(uid);
       }
+
+      // Written by the profile screen's "Clear data" button. Rules do not
+      // cascade to subcollections, so without this block the write is denied
+      // and the handler throws before the player sees any confirmation.
+      match /data_clear_events/{eventId} {
+        allow read: if isSelf(uid) || isAdmin();
+        allow write: if isSelf(uid);
+      }
     }
 
     match /quiz_questions/{questionId} {
