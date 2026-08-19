@@ -1,7 +1,7 @@
 # Lock In — Midterm Progress Report
 
 **Date:** 19 August 2026
-**Repository:** https://github.com/JizuruuZuru/MathMoji (branch `main`)
+**Repository:** https://github.com/JizuruuZuru/Lock-In (branch `main`)
 
 ---
 

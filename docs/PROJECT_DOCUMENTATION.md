@@ -5,7 +5,7 @@
 | | |
 |---|---|
 | **Project title** | Lock In — a proctored quiz and brain-training app for elementary learners |
-| **Repository** | `benchmark` (Flutter) — https://github.com/JizuruuZuru/MathMoji |
+| **Repository** | `benchmark` (Flutter) — https://github.com/JizuruuZuru/Lock-In |
 | **Platform** | Flutter 3.44 / Dart 3.12 — Android, iOS, Web, Windows, macOS, Linux |
 | **Backend** | Firebase Authentication + Cloud Firestore (project `benchmark-14acf`) |
 | **Document date** | 19 August 2026 |
