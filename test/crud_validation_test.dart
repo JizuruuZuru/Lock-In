@@ -55,9 +55,19 @@ void main() {
       expect(errors, contains('choices'));
     });
 
-    test('rejects duplicate wrong choices regardless of case', () {
-      final errors = buildQuestion(choices: const ['Bright', 'bright']).validate();
+    test('rejects a wrong choice repeated exactly', () {
+      final errors = buildQuestion(choices: const ['bright', 'bright']).validate();
       expect(errors['choices'], contains('different'));
+    });
+
+    test('allows wrong choices that differ only in case', () {
+      // Capitalization and punctuation lessons are built from answers that
+      // differ only in case - "The dog ran home." against "the dog ran
+      // home.". Treating those as duplicates refused to let an admin write
+      // such a question, and the matching de-dup in the game loop collapsed
+      // the bundled ones down to a single choice.
+      final errors = buildQuestion(choices: const ['Bright', 'bright']).validate();
+      expect(errors, isNot(contains('choices')));
     });
 
     test('rejects the correct answer also appearing as a wrong choice', () {

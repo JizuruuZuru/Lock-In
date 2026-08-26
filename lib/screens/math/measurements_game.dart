@@ -601,7 +601,7 @@ class _MeasurementsGameState extends State<MeasurementsGame> {
         .trim()
         .replaceAll(',', '')
         .replaceAll('°', '')
-        .replaceAll(RegExp(r'\s+'), ' ')
+        .replaceAll(_measurementWhitespaceRun, ' ')
         .toLowerCase();
   }
 
@@ -746,20 +746,14 @@ class _MeasurementsGameState extends State<MeasurementsGame> {
         gameName: gameLabel,
         score: score,
         difficulty: gameDifficultyModeLabel(_selectedMode),
+        extraHighscoreFields: {'measurements_highscore': score},
       );
-
-      final snapshot = await userRef.get();
-      final previousHighscore = snapshot.data()?['measurements_highscore'];
-      final currentHighscore = previousHighscore is num
-          ? previousHighscore.toInt()
-          : 0;
 
       await userRef.set({
         'measurements_last_score': score,
         'measurements_last_level': level,
         'measurements_last_mode': selectedMode == null ? null : _modeTitle(selectedMode!),
         'measurements_last_played': FieldValue.serverTimestamp(),
-        if (score > currentHighscore) 'measurements_highscore': score,
       }, SetOptions(merge: true));
 
       if (score > 0) {
@@ -1036,7 +1030,7 @@ class _MeasurementsGameState extends State<MeasurementsGame> {
         children: [
           Row(
             children: [
-              Icon(Icons.menu_book_rounded, color: _accentColor, size: 30),
+              const Icon(Icons.menu_book_rounded, color: _accentColor, size: 30),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
@@ -1850,7 +1844,8 @@ return FittedBox(
 
   String _cleanDecimal(double value) {
     final fixed = value.toStringAsFixed(2);
-    return fixed.replaceFirst(RegExp(r'0+$'), '').replaceFirst(RegExp(r'\.$'), '');
+    return fixed.replaceFirst(_measurementTrailingZeros, '')
+        .replaceFirst(_measurementTrailingDot, '');
   }
 
   String _comma(int value) {
@@ -1904,7 +1899,7 @@ class _MeasurementAnswerPad extends StatelessWidget {
             ? (width * 0.007).clamp(3.0, 6.0).toDouble()
             : (width * 0.010).clamp(3.0, 7.0).toDouble();
         final actionGap = (spacing * 5.0).clamp(24.0, 44.0).toDouble();
-        final rows = const [
+        const rows = [
           ['1', '2', '3', '.'],
           ['4', '5', '6', 'SPACE'],
           ['7', '8', '9', '⌫'],
@@ -2011,7 +2006,7 @@ class _MeasurementAnswerPad extends StatelessWidget {
     }
 
     final char = event.character;
-    if (char != null && RegExp(r'^[0-9.]$').hasMatch(char)) {
+    if (char != null && _measurementAllowedKey.hasMatch(char)) {
       onValueTap(char);
       return KeyEventResult.handled;
     }
@@ -2241,10 +2236,10 @@ class _WeatherVisual extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
+    return const Center(
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
-        children: const [
+        children: [
           Icon(Icons.wb_sunny_rounded, color: Color(0xFFFF9800), size: 72),
           SizedBox(width: 18),
           Icon(Icons.cloud_rounded, color: Color(0xFF78909C), size: 74),
@@ -2255,3 +2250,10 @@ class _WeatherVisual extends StatelessWidget {
     );
   }
 }
+
+/// Compiled once. These ran on every keypress and on every frame that
+/// formatted a measurement.
+final RegExp _measurementTrailingZeros = RegExp(r'0+$');
+final RegExp _measurementTrailingDot = RegExp(r'\.$');
+final RegExp _measurementWhitespaceRun = RegExp(r'\s+');
+final RegExp _measurementAllowedKey = RegExp(r'^[0-9.]$');

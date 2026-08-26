@@ -148,6 +148,80 @@ class _PlayerOnboardingPageState extends State<PlayerOnboardingPage> {
     }
   }
 
+  /// Steps back one screen, or leaves setup entirely from the first one.
+  ///
+  /// There are two ways in here and they need different exits. WelcomePage
+  /// pushes this page, so there is a route to pop back to. AppGate renders it
+  /// as the home widget when a signed-in player has an unfinished profile -
+  /// nothing to pop, so leaving means signing out and letting the gate route
+  /// back to the start screen.
+  Future<void> _goBack() async {
+    if (_loading) return;
+    SoundService().playButtonSoundNow();
+
+    if (_step > 0) {
+      setState(() {
+        _errorText = null;
+        _step -= 1;
+      });
+      return;
+    }
+
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+      return;
+    }
+
+    final leave = await _confirmLeaveSetup();
+    if (leave != true || !mounted) return;
+
+    setState(() => _loading = true);
+    try {
+      await FirebaseAuth.instance.signOut();
+    } catch (_) {
+      // Even if sign-out fails, fall through to the gate: it re-reads the
+      // auth state and will simply show this page again rather than stranding
+      // the player on a dead screen.
+    }
+    if (!mounted) return;
+    widget.onFinished();
+  }
+
+  Future<bool?> _confirmLeaveSetup() {
+    return showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: _panelColor,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(22),
+          side: const BorderSide(color: _inkColor, width: 2),
+        ),
+        title: const Text(
+          'Leave setup?',
+          style: TextStyle(fontWeight: FontWeight.w900),
+        ),
+        content: const Text(
+          'You will go back to the start screen and can set up your player '
+          'again later.',
+          style: TextStyle(fontWeight: FontWeight.w600),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text(
+              'Keep setting up',
+              style: TextStyle(fontWeight: FontWeight.w800),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Leave'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _finishOnboarding() async {
     setState(() {
       _loading = true;
@@ -503,15 +577,7 @@ class _PlayerOnboardingPageState extends State<PlayerOnboardingPage> {
             children: [
               Expanded(
                 child: OutlinedButton(
-                  onPressed: _loading
-                      ? null
-                      : () {
-                          SoundService().playButtonSoundNow();
-                          setState(() {
-                            _errorText = null;
-                            _step = 0;
-                          });
-                        },
+                  onPressed: _loading ? null : _goBack,
                   style: OutlinedButton.styleFrom(
                     minimumSize: const Size.fromHeight(56),
                     side: const BorderSide(color: _inkColor, width: 2),
@@ -575,15 +641,7 @@ class _PlayerOnboardingPageState extends State<PlayerOnboardingPage> {
             children: [
               Expanded(
                 child: OutlinedButton(
-                  onPressed: _loading
-                      ? null
-                      : () {
-                          SoundService().playButtonSoundNow();
-                          setState(() {
-                            _errorText = null;
-                            _step = 1;
-                          });
-                        },
+                  onPressed: _loading ? null : _goBack,
                   style: OutlinedButton.styleFrom(
                     minimumSize: const Size.fromHeight(56),
                     side: const BorderSide(color: _inkColor, width: 2),
@@ -637,9 +695,22 @@ class _PlayerOnboardingPageState extends State<PlayerOnboardingPage> {
 
     return Theme(
       data: _buildTheme(context),
-      child: Scaffold(
+      child: PopScope(
+        // Take over the system/browser back gesture too, so it steps back
+        // through setup instead of closing the app or dropping the player
+        // somewhere the gate will just send them back from.
+        canPop: false,
+        onPopInvokedWithResult: (didPop, _) {
+          if (!didPop) _goBack();
+        },
+        child: Scaffold(
         appBar: AppBar(
           automaticallyImplyLeading: false,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_rounded),
+            tooltip: _step > 0 ? 'Back' : 'Back to start',
+            onPressed: _loading ? null : _goBack,
+          ),
           title: const Text('Player Setup'),
         ),
         body: _buildBackground(
@@ -679,6 +750,7 @@ class _PlayerOnboardingPageState extends State<PlayerOnboardingPage> {
               },
             ),
           ),
+        ),
         ),
       ),
     );

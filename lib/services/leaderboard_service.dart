@@ -1,20 +1,45 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
-String _safeGameId(String gameName) {
-  return gameName
-      .trim()
-      .toLowerCase()
-      .replaceAll(RegExp(r'[^a-z0-9]+'), '_')
-      .replaceAll(RegExp(r'_+'), '_')
-      .replaceAll(RegExp(r'^_|_$'), '');
-}
+import '../utils/game_key.dart';
+
+/// The display name resolved for each uid this session, keyed by uid so two
+/// players on one device can never see each other's name.
+///
+/// Every game over used to re-read `users/{uid}` purely to find out what to
+/// call the player. The name does not change mid-game, so it is looked up
+/// once and reused; [resetPlayerNameCache] clears it at sign-out.
+final Map<String, String> _playerNameCache = <String, String>{};
+
+/// Clears the cached display names, so a name edited after sign-out is picked
+/// up fresh on the next leaderboard write.
+void resetPlayerNameCache() => _playerNameCache.clear();
 
 Future<String> _currentPlayerName(User user) async {
-  final firestore = FirebaseFirestore.instance;
-  final userDoc = await firestore.collection('users').doc(user.uid).get();
-  final data = userDoc.data();
+  final cached = _playerNameCache[user.uid];
+  if (cached != null) return cached;
 
+  final firestore = FirebaseFirestore.instance;
+  Map<String, dynamic>? data;
+  var readSucceeded = false;
+  try {
+    final userDoc = await firestore.collection('users').doc(user.uid).get();
+    data = userDoc.data();
+    readSucceeded = true;
+  } catch (_) {
+    // Offline, or the read was refused. Fall back to whatever the auth record
+    // itself can tell us rather than failing the leaderboard write - but do
+    // not cache that guess, or one offline finish would pin a worse name for
+    // the rest of the session.
+    data = null;
+  }
+
+  final resolved = _nameFrom(user, data);
+  if (readSucceeded) _playerNameCache[user.uid] = resolved;
+  return resolved;
+}
+
+String _nameFrom(User user, Map<String, dynamic>? data) {
   final fullName = data?['fullName']?.toString().trim();
   final username = data?['username']?.toString().trim();
   final firstName = data?['firstName']?.toString().trim();
@@ -48,7 +73,7 @@ Future<void> updateLeaderboardEntry({
 
   final firestore = FirebaseFirestore.instance;
   final playerName = await _currentPlayerName(user);
-  final safeGameId = _safeGameId(gameName);
+  final safeGameId = safeGameKey(gameName);
   final docId = '${user.uid}_$safeGameId';
   final docRef = firestore.collection('leaderboard_entries').doc(docId);
 

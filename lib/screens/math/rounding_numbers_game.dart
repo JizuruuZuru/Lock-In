@@ -440,19 +440,13 @@ class _RoundingNumbersGameState extends State<RoundingNumbersGame> {
         gameName: _gameName,
         score: score,
         difficulty: gameDifficultyModeLabel(_selectedMode),
+        extraHighscoreFields: {'rounding_numbers_highscore': score},
       );
-
-      final snapshot = await userRef.get();
-      final previousHighscore = snapshot.data()?['rounding_numbers_highscore'];
-      final currentHighscore = previousHighscore is num
-          ? previousHighscore.toInt()
-          : 0;
 
       await userRef.set({
         'rounding_numbers_last_score': score,
         'rounding_numbers_last_level': level,
         'rounding_numbers_last_played': FieldValue.serverTimestamp(),
-        if (score > currentHighscore) 'rounding_numbers_highscore': score,
       }, SetOptions(merge: true));
 
       if (score > 0) {

@@ -58,7 +58,7 @@ class _CorrectSplashState extends State<CorrectSplash>
       animation: _controller,
       builder: (context, child) {
         // Fade out after reaching peak
-        final fadeOutStart = 0.5;
+        const fadeOutStart = 0.5;
         final fadeOutProgress = (_controller.value - fadeOutStart) / (1 - fadeOutStart);
         final opacity = _controller.value < fadeOutStart
             ? _fadeAnimation.value

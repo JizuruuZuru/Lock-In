@@ -2,9 +2,9 @@ String normalizeNamePart(String value) {
   final cleaned = value
       .trim()
       .toLowerCase()
-      .replaceAll(RegExp(r'[^a-z0-9]+'), '.')
-      .replaceAll(RegExp(r'\.+'), '.')
-      .replaceAll(RegExp(r'^\.|\.$'), '');
+      .replaceAll(_nonAlphanumericRun, '.')
+      .replaceAll(_dotRun, '.')
+      .replaceAll(_edgeDots, '');
   return cleaned;
 }
 
@@ -28,3 +28,7 @@ String buildNameCredentialEmail({
   final loginId = buildNameLoginId(firstName: firstName, lastName: lastName);
   return '$loginId@lockinplayers.app';
 }
+
+final RegExp _nonAlphanumericRun = RegExp(r'[^a-z0-9]+');
+final RegExp _dotRun = RegExp(r'\.+');
+final RegExp _edgeDots = RegExp(r'^\.|\.$');

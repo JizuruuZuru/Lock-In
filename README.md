@@ -14,7 +14,7 @@ without an app restart.
 | **Framework** | Flutter 3.44 · Dart 3.12 |
 | **Backend** | Firebase Authentication + Cloud Firestore |
 | **Platforms** | Android · iOS · Web · Windows · macOS · Linux |
-| **Tests** | 136, all passing |
+| **Tests** | 153, all passing |
 
 ---
 
@@ -106,7 +106,7 @@ Repeat step 2 with your release keystore for a release build.
 
 ```bash
 flutter analyze                                     # static analysis
-flutter test                                        # 136 unit tests
+flutter test                                        # 153 unit tests
 flutter test test/firestore_rest_api_test.dart      # the REST layer alone
 ```
 
@@ -140,7 +140,7 @@ lib/
 │   └── user_admin_repository.dart    CRUD — users
 ├── utils/                      theme, layout, Firebase options
 └── widgets/                    21 reusable widgets
-test/                           9 files, 136 tests
+test/                           11 files, 153 tests
 tool/                           CLI scripts — API smoke test, sample-data seeder
 docs/                           project documentation
 firestore.rules                 server-side role enforcement
@@ -174,6 +174,13 @@ The app is built for a school connection that comes and goes:
 - Admin writes made offline are queued by Firestore and reported as *"Saved on
   this device. It will sync when you are back online"* — not left spinning, and
   not falsely reported as saved to the server.
+- The typeface is **bundled, not downloaded**. `google_fonts` fetches from
+  fonts.gstatic.com on first launch and quietly falls back to Roboto when that
+  fails, so a first launch on a dead connection looked different from every
+  launch after it. The OFL-licensed Noto Sans faces now ship in
+  [`assets/fonts/`](assets/fonts) — subsetted to Latin, IPA, punctuation, and
+  symbols, which is 0.85 MB rather than 3.2 MB and drops no glyph the app can
+  render. Licence: [`assets/fonts/OFL.txt`](assets/fonts/OFL.txt).
 
 ---
 

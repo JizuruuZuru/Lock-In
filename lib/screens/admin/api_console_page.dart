@@ -9,6 +9,7 @@ import '../../services/api/firestore_rest_api.dart';
 import '../../services/api/open_trivia_api.dart';
 import '../../utils/admin_theme.dart';
 import '../../widgets/offline_banner.dart';
+import '../../widgets/source_link.dart';
 
 /// Live API test bench for the admin panel.
 ///
@@ -39,6 +40,14 @@ class _StepResult {
   final Duration elapsed;
   final String? error;
 
+  /// What this step means in plain words. The label is the technical name;
+  /// this is the line a teacher reads.
+  final String purpose;
+
+  /// Set when a step is *expected* to fail - the run deliberately deletes a
+  /// document that does not exist, to show the app handles errors too.
+  final bool failureExpected;
+
   const _StepResult({
     required this.label,
     required this.method,
@@ -48,9 +57,14 @@ class _StepResult {
     this.statusCode = 0,
     this.elapsed = Duration.zero,
     this.error,
+    this.purpose = '',
+    this.failureExpected = false,
   });
 
   bool get failed => error != null;
+
+  /// A failure that was the point of the step is not a problem.
+  bool get isProblem => failed && !failureExpected;
 }
 
 class _ApiConsolePageState extends State<ApiConsolePage> {
@@ -97,6 +111,8 @@ class _ApiConsolePageState extends State<ApiConsolePage> {
     Future<T> Function() body, {
     required _StepResult Function(T value) onSuccess,
     String url = '',
+    String purpose = '',
+    bool failureExpected = false,
   }) async {
     setState(() => _currentStep = label);
     final watch = Stopwatch()..start();
@@ -116,6 +132,8 @@ class _ApiConsolePageState extends State<ApiConsolePage> {
             responseBody: built.responseBody,
             statusCode: built.statusCode,
             elapsed: watch.elapsed,
+            purpose: purpose,
+            failureExpected: failureExpected,
           ),
         );
       });
@@ -134,6 +152,8 @@ class _ApiConsolePageState extends State<ApiConsolePage> {
             elapsed: watch.elapsed,
             error: failure.message,
             responseBody: failure.detail ?? '',
+            purpose: purpose,
+            failureExpected: failureExpected,
           ),
         );
       });
@@ -154,6 +174,7 @@ class _ApiConsolePageState extends State<ApiConsolePage> {
       'GET',
       () => _trivia.fetchQuestions(amount: 2, difficulty: 'easy'),
       url: 'https://${OpenTriviaApi.host}/api.php',
+      purpose: 'Borrow ready-made questions from the trivia library.',
       onSuccess: (value) => _StepResult(
         label: 'GET trivia questions (${value.questions.length} returned)',
         method: 'GET',
@@ -168,6 +189,7 @@ class _ApiConsolePageState extends State<ApiConsolePage> {
       'GET',
       () => _dictionary.lookup('planet'),
       url: 'https://${DictionaryApi.host}/api/v2/entries/en/planet',
+      purpose: 'Look up a word, the way the in-game dictionary does.',
       onSuccess: (value) => _StepResult(
         label: 'GET dictionary entry for "planet"',
         method: 'GET',
@@ -183,6 +205,7 @@ class _ApiConsolePageState extends State<ApiConsolePage> {
       'POST',
       () => _rest.createQuestionDetailed(_probeRecord()),
       url: '${_rest.documentsBaseUrl}/quiz_questions',
+      purpose: 'Save a new question into your question bank.',
       onSuccess: (value) => _StepResult(
         label: 'POST create question (id ${value.createdIds.first})',
         method: 'POST',
@@ -201,6 +224,7 @@ class _ApiConsolePageState extends State<ApiConsolePage> {
       await _step<RestCallLog>(
         'PATCH update question',
         'PATCH',
+        purpose: 'Edit that question and save the change.',
         () => _rest.updateQuestion(
           _probeRecord().copyWith(
             id: probeId,
@@ -223,6 +247,7 @@ class _ApiConsolePageState extends State<ApiConsolePage> {
       await _step<RestCallLog>(
         'PATCH publish flag',
         'PATCH',
+        purpose: 'Change only its published setting, nothing else.',
         () => _rest.setPublished(probeId, false),
         url: '${_rest.documentsBaseUrl}/quiz_questions/$probeId',
         onSuccess: (log) => _StepResult(
@@ -245,6 +270,7 @@ class _ApiConsolePageState extends State<ApiConsolePage> {
         limit: 5,
       ),
       url: '${_rest.documentsBaseUrl}:runQuery',
+      purpose: 'Search the question bank and read the matches back.',
       onSuccess: (value) => _StepResult(
         label: 'POST runQuery search (${value.questions.length} matched)',
         method: value.log.method,
@@ -260,6 +286,7 @@ class _ApiConsolePageState extends State<ApiConsolePage> {
       await _step<RestCallLog>(
         'DELETE question',
         'DELETE',
+        purpose: 'Delete the test question so nothing is left behind.',
         () => _rest.deleteQuestion(probeId),
         url: '${_rest.documentsBaseUrl}/quiz_questions/$probeId',
         onSuccess: (log) => _StepResult(
@@ -277,6 +304,9 @@ class _ApiConsolePageState extends State<ApiConsolePage> {
     await _step<RestCallLog>(
       'DELETE missing document (expected failure)',
       'DELETE',
+      purpose: 'Try to delete something that is not there. This one is meant '
+          'to fail - it shows the app handles errors instead of crashing.',
+      failureExpected: true,
       () => _rest.deleteQuestion('this-document-does-not-exist'),
       url: '${_rest.documentsBaseUrl}/quiz_questions/this-document-does-not-exist',
       onSuccess: (log) => _StepResult(
@@ -335,12 +365,12 @@ class _ApiConsolePageState extends State<ApiConsolePage> {
     final failed = _results.where((result) => result.failed).length;
 
     return AdminScaffold(
-      title: 'API Console',
-      subtitle: 'GET - POST - PATCH - DELETE',
+      title: 'Connection Check',
+      subtitle: 'Make sure the app can reach everything it needs',
       actions: [
         if (_results.isNotEmpty)
           IconButton(
-            tooltip: 'Copy the whole log',
+            tooltip: 'Copy the full technical log',
             onPressed: _copyLog,
             icon: const Icon(Icons.copy_all_rounded),
           ),
@@ -363,10 +393,10 @@ class _ApiConsolePageState extends State<ApiConsolePage> {
                 if (_results.isEmpty && !_running)
                   const AdminStateView(
                     icon: Icons.api_rounded,
-                    title: 'Nothing run yet',
+                    title: 'Ready when you are',
                     message:
-                        'Tap "Run all requests" to call every endpoint in order '
-                        'and see the real request and response for each one.',
+                        'Tap "Start the check" above. It runs eight quick tests '
+                        'and tells you, in plain words, whether each one worked.',
                   )
                 else
                   for (final result in _results) ...[
@@ -377,7 +407,9 @@ class _ApiConsolePageState extends State<ApiConsolePage> {
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 24),
                     child: AdminStateView.loading(
-                      _currentStep.isEmpty ? 'Starting...' : 'Running: $_currentStep',
+                      _currentStep.isEmpty
+                          ? 'Starting...'
+                          : 'Checking: $_currentStep',
                     ),
                   ),
               ],
@@ -395,11 +427,70 @@ class _ApiConsolePageState extends State<ApiConsolePage> {
         children: [
           const AdminSectionHeader(
             icon: Icons.lan_rounded,
-            title: 'Every request the app makes',
-            caption: 'Runs the full lifecycle against a throwaway document, then '
-                'deletes it. Nothing is left in the question bank.',
+            title: 'What this does',
+            caption:
+                'The app talks to three services over the internet. This runs '
+                'eight quick tests against them and reports what happened. It '
+                'is completely safe: it makes one temporary question, edits it, '
+                'finds it, then deletes it again. Your real questions are never '
+                'touched, and students never see the test question.',
           ),
           const SizedBox(height: 12),
+          const _PlainStep(
+            number: 1,
+            text: 'Borrow ready-made questions from the trivia library.',
+          ),
+          const _PlainStep(
+            number: 2,
+            text: 'Look up a word, the way the in-game dictionary does.',
+          ),
+          const _PlainStep(
+            number: 3,
+            text: 'Save a new question into your question bank.',
+          ),
+          const _PlainStep(
+            number: 4,
+            text: 'Edit that question, then change its published setting.',
+          ),
+          const _PlainStep(
+            number: 5,
+            text: 'Search the question bank and read the matches back.',
+          ),
+          const _PlainStep(
+            number: 6,
+            text: 'Delete the test question so nothing is left behind.',
+          ),
+          const _PlainStep(
+            number: 7,
+            text: 'Deliberately ask for something that does not exist, to '
+                'check the app handles mistakes without crashing.',
+          ),
+          const Divider(height: 22),
+          const Text(
+            'The two question and word services are public and free:',
+            style: TextStyle(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w700,
+              color: AdminPalette.muted,
+            ),
+          ),
+          const SizedBox(height: 4),
+          const SourceLink(
+            url: 'https://opentdb.com',
+            label: 'Open Trivia Database',
+            description: 'Where the borrowed quiz questions come from.',
+          ),
+          const SourceLink(
+            url: 'https://dictionaryapi.dev',
+            label: 'Free Dictionary API',
+            description: 'Where in-game word definitions come from.',
+          ),
+          const Divider(height: 22),
+          const Text(
+            'Technical detail',
+            style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 8),
           _endpointRow('GET', 'opentdb.com/api.php', 'Fetch trivia questions'),
           _endpointRow(
             'GET',
@@ -518,37 +609,92 @@ class _ApiConsolePageState extends State<ApiConsolePage> {
                       ),
                     )
                   : const Icon(Icons.play_arrow_rounded),
-              label: Text(_running ? 'Running...' : 'Run all requests'),
+              label: Text(_running ? 'Checking...' : 'Start the check'),
             ),
           ),
-          if (_results.isNotEmpty) ...[
+          if (_results.isNotEmpty && !_running) ...[
             const SizedBox(height: 12),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                AdminChip(
-                  label: '$passed succeeded',
-                  color: AdminPalette.success,
-                  icon: Icons.check_circle_rounded,
-                ),
-                if (failed > 0) ...[
-                  const SizedBox(width: 8),
-                  AdminChip(
-                    label: '$failed failed',
-                    color: AdminPalette.danger,
-                    icon: Icons.error_rounded,
-                  ),
-                ],
-              ],
-            ),
+            _verdict(),
           ],
         ],
       ),
     );
   }
 
+  /// A plain-language answer to "did it work?", so nobody has to interpret
+  /// status codes to find out.
+  Widget _verdict() {
+    final problems = _results.where((result) => result.isProblem).toList();
+    final good = problems.isEmpty;
+
+    final color = good ? AdminPalette.success : AdminPalette.danger;
+    final message = good
+        ? 'Everything worked. The app can reach all of its services, and '
+            'questions can be saved, edited, searched, and deleted.'
+        : problems.length == _results.length
+            ? 'Nothing could be reached. This is almost always the internet '
+                'connection - check Wi-Fi and try again.'
+            : '${problems.length} of ${_results.length} checks did not work. '
+                'Open the red rows below to see what went wrong.';
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: color, width: 1.8),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            good ? Icons.check_circle_rounded : Icons.error_rounded,
+            color: color,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  good ? 'All checks passed' : 'Some checks did not pass',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w900,
+                    color: color,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  message,
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                    height: 1.35,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _resultCard(_StepResult result) {
-    final color = result.failed ? AdminPalette.danger : _methodColor(result.method);
+    // A step that was supposed to fail counts as a pass, and says so, rather
+    // than showing a red row that looks like something is broken.
+    final problem = result.isProblem;
+    final color = problem
+        ? AdminPalette.danger
+        : (result.failureExpected ? const Color(0xFF6B6382) : AdminPalette.success);
+
+    final status = problem
+        ? 'Did not work'
+        : result.failureExpected
+            ? 'Failed on purpose, as expected'
+            : 'Worked';
 
     return AdminPanel(
       padding: EdgeInsets.zero,
@@ -558,33 +704,95 @@ class _ApiConsolePageState extends State<ApiConsolePage> {
         child: ExpansionTile(
           tilePadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
           childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
-          leading: SizedBox(width: 66, child: _methodBadge(result.method)),
-          title: Text(
-            result.label,
-            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
+          leading: Icon(
+            problem
+                ? Icons.error_rounded
+                : result.failureExpected
+                    ? Icons.shield_moon_rounded
+                    : Icons.check_circle_rounded,
+            color: color,
+            size: 26,
           ),
-          subtitle: Text(
-            result.failed
-                ? result.error!
-                : 'HTTP ${result.statusCode} - ${result.elapsed.inMilliseconds} ms',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              color: result.failed ? AdminPalette.danger : AdminPalette.muted,
+          title: Text(
+            result.purpose.isEmpty ? result.label : result.purpose,
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
+              height: 1.3,
             ),
           ),
-          trailing: Icon(
-            result.failed ? Icons.error_rounded : Icons.check_circle_rounded,
-            color: color,
+          subtitle: Padding(
+            padding: const EdgeInsets.only(top: 3),
+            child: Text(
+              problem
+                  ? '$status - ${result.error}'
+                  : '$status - took ${result.elapsed.inMilliseconds} ms',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: color,
+              ),
+            ),
           ),
+          trailing: SizedBox(width: 66, child: _methodBadge(result.method)),
           children: [
-            _codeBlock('URL', result.url),
+            if (problem) _troubleshooting(result),
+            _codeBlock('Technical name', result.label),
+            _codeBlock('Address it called', result.url),
             if (result.requestBody.isNotEmpty)
-              _codeBlock('Request body', result.requestBody),
+              _codeBlock('What was sent', result.requestBody),
             if (result.responseBody.isNotEmpty)
-              _codeBlock('Response body', result.responseBody),
+              _codeBlock('What came back', result.responseBody),
           ],
         ),
+      ),
+    );
+  }
+
+  /// Turns a failure into something actionable. The raw message is already on
+  /// the card; this says what to actually do about it.
+  Widget _troubleshooting(_StepResult result) {
+    final code = result.statusCode;
+    final advice = switch (code) {
+      401 || 403 =>
+        'The app was not allowed to do this. Sign out and sign back in, and '
+            'check this account is still an admin.',
+      404 => 'The thing it asked for was not there. If this keeps happening, '
+          'the question may already have been deleted.',
+      429 => 'Too many requests too quickly. Wait about ten seconds and run '
+          'the check again.',
+      >= 500 => 'The other service is having trouble - nothing is wrong with '
+          'this app. Try again in a few minutes.',
+      _ => 'This is usually the internet connection. Check Wi-Fi, then run '
+          'the check again.',
+    };
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AdminPalette.danger.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AdminPalette.danger.withValues(alpha: 0.5)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.lightbulb_rounded,
+              size: 18, color: AdminPalette.danger),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              advice,
+              style: const TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+                height: 1.35,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -638,6 +846,57 @@ class _ApiConsolePageState extends State<ApiConsolePage> {
                   height: 1.45,
                   color: Color(0xFFD7E3FF),
                 ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+
+/// One numbered line in the "what this does" list, written for someone who has
+/// never seen an HTTP verb.
+class _PlainStep extends StatelessWidget {
+  final int number;
+  final String text;
+
+  const _PlainStep({required this.number, required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 22,
+            height: 22,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: AdminPalette.accent.withValues(alpha: 0.14),
+              shape: BoxShape.circle,
+              border: Border.all(color: AdminPalette.accent, width: 1.4),
+            ),
+            child: Text(
+              '$number',
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w900,
+                color: AdminPalette.accent,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                height: 1.4,
               ),
             ),
           ),

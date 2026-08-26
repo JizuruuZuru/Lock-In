@@ -37,6 +37,12 @@ class QuizQuestionRecord {
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
+  /// True for a question compiled into the app rather than stored in
+  /// Firestore. Never persisted - [toMap] does not write it - it exists so the
+  /// admin list can show the bundled bank read-only next to the editable
+  /// records. A bundled question has no document to update or delete.
+  final bool bundled;
+
   const QuizQuestionRecord({
     this.id = '',
     required this.subject,
@@ -51,12 +57,19 @@ class QuizQuestionRecord {
     this.createdBy,
     this.createdAt,
     this.updatedAt,
+    this.bundled = false,
   });
 
   /// Smallest number of wrong answers a question needs to be playable.
   static const int minWrongChoices = 2;
   static const int maxWrongChoices = 5;
   static const int maxLevel = 20;
+
+  /// Longest a question may be. Reading-comprehension questions carry a whole
+  /// passage in the prompt - the longest one bundled with the app runs to 761
+  /// characters - so the cap has to clear that with room to spare rather than
+  /// rejecting the app's own questions.
+  static const int maxPromptLength = 1000;
 
   QuizQuestionRecord copyWith({
     String? id,
@@ -72,6 +85,7 @@ class QuizQuestionRecord {
     String? createdBy,
     DateTime? createdAt,
     DateTime? updatedAt,
+    bool? bundled,
   }) {
     return QuizQuestionRecord(
       id: id ?? this.id,
@@ -87,6 +101,26 @@ class QuizQuestionRecord {
       createdBy: createdBy ?? this.createdBy,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      bundled: bundled ?? this.bundled,
+    );
+  }
+
+  /// Wraps one of the app's compiled-in questions so it can be listed beside
+  /// the Firestore records. [id] is left empty: there is no document behind it.
+  factory QuizQuestionRecord.fromBundled(
+    SubjectQuizType subject,
+    LeveledQuizQuestion leveled,
+  ) {
+    final question = leveled.question;
+    return QuizQuestionRecord(
+      subject: subject,
+      topic: question.topic,
+      instruction: question.instruction,
+      prompt: question.prompt,
+      correctAnswer: question.correctAnswer,
+      choices: question.choices,
+      minLevel: leveled.minLevel,
+      bundled: true,
     );
   }
 
@@ -189,8 +223,8 @@ class QuizQuestionRecord {
       errors['prompt'] = 'The question cannot be empty.';
     } else if (trimmedPrompt.length < 5) {
       errors['prompt'] = 'The question is too short to be clear.';
-    } else if (trimmedPrompt.length > 600) {
-      errors['prompt'] = 'Keep the question under 600 characters.';
+    } else if (trimmedPrompt.length > maxPromptLength) {
+      errors['prompt'] = 'Keep the question under $maxPromptLength characters.';
     }
 
     final trimmedAnswer = correctAnswer.trim();
@@ -206,15 +240,17 @@ class QuizQuestionRecord {
     } else if (wrongAnswers.length > maxWrongChoices) {
       errors['choices'] = 'Use at most $maxWrongChoices wrong answers.';
     } else {
+      // Compared with case intact: a capitalization question's whole point is
+      // answers that differ only in case, and folding case here would refuse
+      // to let an admin write one.
       final seen = <String>{};
       for (final wrong in wrongAnswers) {
-        if (!seen.add(wrong.toLowerCase())) {
+        if (!seen.add(wrong)) {
           errors['choices'] = 'Wrong answers must all be different ("$wrong" is repeated).';
           break;
         }
       }
-      if (!errors.containsKey('choices') &&
-          seen.contains(trimmedAnswer.toLowerCase())) {
+      if (!errors.containsKey('choices') && seen.contains(trimmedAnswer)) {
         errors['choices'] =
             'The correct answer is also listed as a wrong answer. Remove the duplicate.';
       }

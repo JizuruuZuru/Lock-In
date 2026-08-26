@@ -29,8 +29,21 @@ class _AccountListPageState extends State<AccountListPage> {
   final UserAdminRepository _repository = UserAdminRepository();
   final TextEditingController _searchController = TextEditingController();
 
+  /// Held in state so a rebuild does not open a second Firestore listener.
+  /// See the matching note in QuestionListPage: the search field setStates on
+  /// every keystroke, and an inline stream would flash the list back to its
+  /// loading state between characters.
+  late Stream<List<AppUserRecord>> _accountStream = _repository.watchAccounts();
+
   _AccountFilter _filter = _AccountFilter.all;
   String _search = '';
+
+  /// Reattaches the listener after an error.
+  void _reloadAccounts() {
+    setState(() {
+      _accountStream = _repository.watchAccounts();
+    });
+  }
 
   String? get _currentUid => FirebaseAuth.instance.currentUser?.uid;
 
@@ -223,12 +236,12 @@ class _AccountListPageState extends State<AccountListPage> {
           ),
           Expanded(
             child: StreamBuilder<List<AppUserRecord>>(
-              stream: _repository.watchAccounts(),
+              stream: _accountStream,
               builder: (context, snapshot) {
                 if (snapshot.hasError) {
                   return AdminStateView.error(
                     'Could not load accounts.\n\n${snapshot.error}',
-                    onRetry: () => setState(() {}),
+                    onRetry: _reloadAccounts,
                   );
                 }
                 if (!snapshot.hasData) {

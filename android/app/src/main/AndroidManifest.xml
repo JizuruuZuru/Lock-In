@@ -41,5 +41,23 @@
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
         </intent>
+
+        <!-- Lets url_launcher open the "where these questions come from"
+             links in a browser. Android 11 and newer hide other apps unless
+             the intent is declared here, so without this canLaunchUrl()
+             returns false and the link silently does nothing. -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="https"/>
+        </intent>
+
+        <!-- Lets the app see which text-to-speech engines are installed, so it
+             can pick the one with the best voices for the spelling game.
+             Android 11 and newer hide other packages unless they are declared
+             here: without this, getEngines() reports only the current default
+             and the engine preference silently does nothing. -->
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE"/>
+        </intent>
     </queries>
 </manifest>

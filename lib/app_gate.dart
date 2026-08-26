@@ -10,6 +10,7 @@ import 'screens/auth/welcome_page.dart';
 import 'screens/home/home_menu.dart';
 import 'screens/onboarding/player_onboarding_page.dart';
 import 'services/custom_question_sync.dart';
+import 'services/leaderboard_service.dart';
 import 'utils/admin_theme.dart';
 import 'widgets/animated_shape_background.dart';
 
@@ -85,6 +86,7 @@ class _AppGateState extends State<AppGate> {
     final record = AppUserRecord.fromMap(user.uid, data);
 
     if (record.disabled) {
+      resetPlayerNameCache();
       await auth.signOut();
       return _GateResult(route: _GateRoute.disabled, user: user, record: record);
     }
@@ -178,10 +180,10 @@ class _GateLoadingScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return const Scaffold(
       body: AnimatedShapeBackground(
-        gradientColors: const [Color(0xFFE6F7E6), Color(0xFFD4EDD1)],
-        shapes: const [
+        gradientColors: [Color(0xFFE6F7E6), Color(0xFFD4EDD1)],
+        shapes: [
           AnimatedBackgroundShape(
             kind: BackgroundShapeKind.roundedSquare,
             alignment: Alignment.topLeft,
@@ -202,7 +204,7 @@ class _GateLoadingScreen extends StatelessWidget {
             borderColor: Color(0x4D2F5233),
           ),
         ],
-        child: const Center(
+        child: Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [

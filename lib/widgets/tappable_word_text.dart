@@ -61,16 +61,23 @@ class _TappableWordTextState extends State<TappableWordText> {
     'there', 'these', 'those', 'each', 'some', 'because',
   };
 
+  // Compiled once. These run per word, on every rebuild of every prompt,
+  // so building them inline meant recompiling two RegExps for each word on
+  // screen every time the question changed.
+  static final RegExp _digit = RegExp(r'[0-9]');
+  static final RegExp _edgePunctuation = RegExp(r"^[^A-Za-z'-]+|[^A-Za-z'-]+$");
+  static final RegExp _whitespaceGroup = RegExp(r'(\s+)');
+
   bool _isLookupable(String word) {
     final cleaned = _strip(word);
     if (cleaned.length < widget.minWordLength) return false;
     if (_stopWords.contains(cleaned.toLowerCase())) return false;
     // Anything with a digit is not a dictionary word.
-    return !cleaned.contains(RegExp(r'[0-9]'));
+    return !cleaned.contains(_digit);
   }
 
   String _strip(String word) {
-    return word.replaceAll(RegExp(r"^[^A-Za-z'-]+|[^A-Za-z'-]+$"), '');
+    return word.replaceAll(_edgePunctuation, '');
   }
 
   @override
@@ -78,7 +85,7 @@ class _TappableWordTextState extends State<TappableWordText> {
     _disposeRecognizers();
 
     // Split on whitespace but keep the separators so spacing is preserved.
-    final tokens = widget.text.split(RegExp(r'(\s+)'));
+    final tokens = widget.text.split(_whitespaceGroup);
     final spans = <InlineSpan>[];
 
     for (var i = 0; i < tokens.length; i++) {

@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:flutter/foundation.dart';
 
 class ConnectivityService {
   static Future<bool> isOffline() async {
@@ -11,11 +12,25 @@ class ConnectivityService {
       return true;
     }
 
+    // The transport check alone can't tell "connected to Wi-Fi" from
+    // "connected to Wi-Fi that has no route out", so it is confirmed with a
+    // real DNS lookup — everywhere except the web.
+    //
+    // `dart:io` compiles on the web but is a stub: every entry point throws
+    // `UnsupportedError`, so `InternetAddress.lookup` would fail here rather
+    // than answering the question. The browser's own connectivity signal is
+    // all that is available, so trust it and report online.
+    if (kIsWeb) return false;
+
     try {
       final lookup = await InternetAddress.lookup('example.com');
       return lookup.isEmpty;
     } on SocketException {
       return true;
+    } on UnsupportedError {
+      // A platform without a real dart:io. Fall back to the transport check
+      // above, which already said we have one.
+      return false;
     }
   }
 

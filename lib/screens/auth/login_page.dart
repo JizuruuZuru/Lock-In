@@ -389,7 +389,7 @@ class _LoginPageState extends State<LoginPage> {
                               if (result == true && mounted) {
                               }
                             },
-                            child: Text(
+                            child: const Text(
                               "Don't have an account? Create Account",
                               style: TextStyle(
                                 color: _accentColor,

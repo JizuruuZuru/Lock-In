@@ -424,19 +424,13 @@ class _PlaceValueGameState extends State<PlaceValueGame> {
         gameName: _gameName,
         score: score,
         difficulty: gameDifficultyModeLabel(_selectedMode),
+        extraHighscoreFields: {'place_value_highscore': score},
       );
-
-      final snapshot = await userRef.get();
-      final previousHighscore = snapshot.data()?['place_value_highscore'];
-      final currentHighscore = previousHighscore is num
-          ? previousHighscore.toInt()
-          : 0;
 
       await userRef.set({
         'place_value_last_score': score,
         'place_value_last_level': level,
         'place_value_last_played': FieldValue.serverTimestamp(),
-        if (score > currentHighscore) 'place_value_highscore': score,
       }, SetOptions(merge: true));
 
       if (score > 0) {

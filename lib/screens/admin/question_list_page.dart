@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../data/subject_question_bank.dart';
@@ -26,11 +28,73 @@ class _QuestionListPageState extends State<QuestionListPage> {
   final QuestionRepository _repository = QuestionRepository();
   final TextEditingController _searchController = TextEditingController();
 
+  /// Held in state so a rebuild does not open a second Firestore listener.
+  /// The search field calls setState on every keystroke, and building the
+  /// stream inline would hand StreamBuilder a new stream each time - dropping
+  /// the subscription, resetting to ConnectionState.waiting, and flashing the
+  /// whole list back to "Loading questions..." between characters.
+  ///
+  /// The query takes no filter arguments; subject and text filtering are both
+  /// applied client-side below, so this never needs rebuilding on its own.
+  late Stream<List<QuizQuestionRecord>> _questionStream =
+      _repository.watchQuestions();
+
   SubjectQuizType? _subjectFilter;
+  _SourceFilter _sourceFilter = _SourceFilter.all;
   String _search = '';
+
+  /// Re-filtering means scanning every question in the bank, and the built-in
+  /// ones carry whole reading passages - roughly a megabyte of text in total.
+  /// Doing that on each keystroke made typing lag, so the search waits until
+  /// the admin stops typing. The field itself stays instant either way.
+  Timer? _searchDebounce;
+  static const Duration _searchDelay = Duration(milliseconds: 220);
+
+  void _onSearchChanged(String value) {
+    _searchDebounce?.cancel();
+    if (value.isEmpty) {
+      // Clearing should feel immediate - there is nothing to wait for.
+      setState(() => _search = '');
+      return;
+    }
+    _searchDebounce = Timer(_searchDelay, () {
+      if (!mounted) return;
+      setState(() => _search = value);
+    });
+  }
+
+  /// The app's compiled-in questions, wrapped as records so they can be listed
+  /// beside the Firestore ones. Built once: the bundled bank cannot change
+  /// while the app is running, and there are thousands of them.
+  static final List<_Listed> _bundled = [
+    for (final subject in SubjectQuizType.values)
+      for (final leveled in SubjectQuestionBank.bundledQuestionsFor(subject))
+        _Listed(QuizQuestionRecord.fromBundled(subject, leveled)),
+  ];
+
+  /// The Firestore half, wrapped the same way. Rebuilt only when the snapshot
+  /// itself changes, not on every keystroke.
+  List<_Listed>? _storedCache;
+  List<QuizQuestionRecord>? _storedCacheSource;
+
+  List<_Listed> _wrapStored(List<QuizQuestionRecord> stored) {
+    if (identical(_storedCacheSource, stored)) return _storedCache!;
+    _storedCacheSource = stored;
+    _storedCache = stored.map(_Listed.new).toList(growable: false);
+    return _storedCache!;
+  }
+
+  /// Reattaches the listener after an error. The retry button used to rely on
+  /// the stream being rebuilt by setState, which no longer happens.
+  void _reloadQuestions() {
+    setState(() {
+      _questionStream = _repository.watchQuestions();
+    });
+  }
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     _searchController.dispose();
     super.dispose();
   }
@@ -116,15 +180,51 @@ class _QuestionListPageState extends State<QuestionListPage> {
 
   // ------------------------------------------------------------------- view
 
-  List<QuizQuestionRecord> _applyFilters(List<QuizQuestionRecord> records) {
+  /// How many questions exist in total for the current source filter, before
+  /// the search and subject filters narrow them.
+  int _totalFor(List<QuizQuestionRecord> stored) {
+    return switch (_sourceFilter) {
+      _SourceFilter.all => stored.length + _bundled.length,
+      _SourceFilter.teacher => stored.length,
+      _SourceFilter.builtIn => _bundled.length,
+    };
+  }
+
+  /// Teacher-written questions first, then the built-in bank - the editable
+  /// ones are what an admin came here to manage.
+  ///
+  /// Filtering runs straight over the two source lists instead of merging them
+  /// into one first. With ~5,800 built-in questions, that merge allocated a
+  /// whole new list on every keystroke, and re-lowercased three fields of every
+  /// record while it was at it.
+  List<QuizQuestionRecord> _visibleQuestions(List<QuizQuestionRecord> stored) {
     final needle = _search.trim().toLowerCase();
-    return records.where((record) {
-      if (_subjectFilter != null && record.subject != _subjectFilter) return false;
-      if (needle.isEmpty) return true;
-      return record.prompt.toLowerCase().contains(needle) ||
-          record.topic.toLowerCase().contains(needle) ||
-          record.correctAnswer.toLowerCase().contains(needle);
-    }).toList(growable: false);
+    final visible = <QuizQuestionRecord>[];
+
+    void collect(List<_Listed> source) {
+      for (final item in source) {
+        if (_subjectFilter != null && item.record.subject != _subjectFilter) {
+          continue;
+        }
+        if (needle.isEmpty || item.haystack.contains(needle)) {
+          visible.add(item.record);
+        }
+      }
+    }
+
+    if (_sourceFilter != _SourceFilter.builtIn) collect(_wrapStored(stored));
+    if (_sourceFilter != _SourceFilter.teacher) collect(_bundled);
+    return visible;
+  }
+
+  /// Built-in questions ship inside the app, so there is no document to edit,
+  /// hide, or delete. Say so rather than silently doing nothing.
+  void _explainBundled() {
+    showAdminSnack(
+      context,
+      'This question is built into the app, so it cannot be edited or '
+      'deleted. Write a new question to add your own.',
+    );
   }
 
   @override
@@ -185,43 +285,47 @@ class _QuestionListPageState extends State<QuestionListPage> {
           ),
           Expanded(
             child: StreamBuilder<List<QuizQuestionRecord>>(
-              stream: _repository.watchQuestions(),
+              stream: _questionStream,
               builder: (context, snapshot) {
                 if (snapshot.hasError) {
                   return AdminStateView.error(
                     'Could not load questions.\n\n${snapshot.error}',
-                    onRetry: () => setState(() {}),
+                    onRetry: _reloadQuestions,
                   );
                 }
                 if (!snapshot.hasData) {
                   return AdminStateView.loading('Loading questions...');
                 }
 
-                final all = snapshot.data!;
-                if (all.isEmpty) {
+                final total = _totalFor(snapshot.data!);
+                if (total == 0) {
                   return AdminStateView(
                     icon: Icons.quiz_outlined,
                     title: 'No questions yet',
-                    message:
-                        'Tap "New question" to write one, or import a batch from Open Trivia DB.',
+                    message: _sourceFilter == _SourceFilter.teacher
+                        ? 'You have not written any questions yet. The app still '
+                            'ships with a built-in bank - switch to "All" to see it.'
+                        : 'Tap "New question" to write one, or import a batch from Open Trivia DB.',
                     actionLabel: 'Write the first question',
                     onAction: _createQuestion,
                   );
                 }
 
-                final visible = _applyFilters(all);
+                final visible = _visibleQuestions(snapshot.data!);
                 if (visible.isEmpty) {
                   return AdminStateView(
                     icon: Icons.search_off_rounded,
                     title: 'No matches',
                     message:
-                        'No question matches your filters. Clear them to see all ${all.length}.',
+                        'No question matches your filters. Clear them to see all $total.',
                     actionLabel: 'Clear filters',
                     onAction: () {
                       _searchController.clear();
+                      _searchDebounce?.cancel();
                       setState(() {
                         _search = '';
                         _subjectFilter = null;
+                        _sourceFilter = _SourceFilter.all;
                       });
                     },
                   );
@@ -245,9 +349,15 @@ class _QuestionListPageState extends State<QuestionListPage> {
                         child: _QuestionCard(
                           record: visible[index],
                           index: index + 1,
-                          onEdit: () => _editQuestion(visible[index]),
-                          onDelete: () => _deleteQuestion(visible[index]),
-                          onTogglePublished: () => _togglePublished(visible[index]),
+                          onEdit: visible[index].bundled
+                              ? _explainBundled
+                              : () => _editQuestion(visible[index]),
+                          onDelete: visible[index].bundled
+                              ? _explainBundled
+                              : () => _deleteQuestion(visible[index]),
+                          onTogglePublished: visible[index].bundled
+                              ? _explainBundled
+                              : () => _togglePublished(visible[index]),
                         ),
                       ),
                     );
@@ -268,7 +378,7 @@ class _QuestionListPageState extends State<QuestionListPage> {
         children: [
           TextField(
             controller: _searchController,
-            onChanged: (value) => setState(() => _search = value),
+            onChanged: _onSearchChanged,
             decoration: InputDecoration(
               isDense: true,
               labelText: 'Search questions',
@@ -280,7 +390,7 @@ class _QuestionListPageState extends State<QuestionListPage> {
                       icon: const Icon(Icons.close_rounded),
                       onPressed: () {
                         _searchController.clear();
-                        setState(() => _search = '');
+                        _onSearchChanged('');
                       },
                     ),
             ),
@@ -307,7 +417,45 @@ class _QuestionListPageState extends State<QuestionListPage> {
               ),
             ],
           ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              const Text(
+                'Source:',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      for (final source in _SourceFilter.values)
+                        _sourceFilterChip(source),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
         ],
+      ),
+    );
+  }
+
+  Widget _sourceFilterChip(_SourceFilter source) {
+    final selected = _sourceFilter == source;
+    final label = switch (source) {
+      _SourceFilter.all => 'All (${_bundled.length}+ built in)',
+      _SourceFilter.teacher => 'Teacher-made',
+      _SourceFilter.builtIn => 'Built in (${_bundled.length})',
+    };
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: ChoiceChip(
+        label: Text(label),
+        selected: selected,
+        onSelected: (_) => setState(() => _sourceFilter = source),
       ),
     );
   }
@@ -341,6 +489,24 @@ String _truncate(String value, int max) {
 }
 
 /// One row in the question list: the prompt, its answers, and the row actions.
+/// Which half of the bank the list is showing.
+enum _SourceFilter { all, teacher, builtIn }
+
+/// A record plus the lowercase text the search box matches against.
+///
+/// Worked out once when the list is built rather than on every keystroke -
+/// with the built-in bank listed, that was three `toLowerCase()` allocations
+/// per record per character typed.
+class _Listed {
+  final QuizQuestionRecord record;
+  final String haystack;
+
+  _Listed(this.record)
+      : haystack = '${record.prompt}\u0000${record.topic}'
+                '\u0000${record.correctAnswer}'
+            .toLowerCase();
+}
+
 class _QuestionCard extends StatelessWidget {
   final QuizQuestionRecord record;
   final int index;
@@ -426,13 +592,21 @@ class _QuestionCard extends StatelessWidget {
                   color: Color(0xFF5E35B1),
                   icon: Icons.cloud_rounded,
                 ),
-              AdminChip(
-                label: record.published ? 'Live' : 'Hidden',
-                color: record.published ? AdminPalette.success : AdminPalette.muted,
-                icon: record.published
-                    ? Icons.visibility_rounded
-                    : Icons.visibility_off_rounded,
-              ),
+              if (record.bundled)
+                const AdminChip(
+                  label: 'Built in',
+                  color: Color(0xFF455A64),
+                  icon: Icons.inventory_2_rounded,
+                )
+              else
+                AdminChip(
+                  label: record.published ? 'Live' : 'Hidden',
+                  color:
+                      record.published ? AdminPalette.success : AdminPalette.muted,
+                  icon: record.published
+                      ? Icons.visibility_rounded
+                      : Icons.visibility_off_rounded,
+                ),
             ],
           ),
           const SizedBox(height: 12),
@@ -465,25 +639,43 @@ class _QuestionCard extends StatelessWidget {
                   ),
                 ),
               ),
+              // A built-in question has no document behind it, so its actions
+              // are shown greyed out and explain themselves when tapped rather
+              // than disappearing - the row would otherwise look broken.
               IconButton(
-                tooltip: record.published ? 'Hide from students' : 'Publish',
+                tooltip: record.bundled
+                    ? 'Built-in questions are always available'
+                    : (record.published ? 'Hide from students' : 'Publish'),
                 onPressed: onTogglePublished,
                 icon: Icon(
                   record.published
                       ? Icons.visibility_off_rounded
                       : Icons.visibility_rounded,
-                  color: AdminPalette.muted,
+                  color: record.bundled
+                      ? AdminPalette.muted.withValues(alpha: 0.4)
+                      : AdminPalette.muted,
                 ),
               ),
               IconButton(
-                tooltip: 'Edit',
+                tooltip: record.bundled ? 'Built-in - cannot be edited' : 'Edit',
                 onPressed: onEdit,
-                icon: const Icon(Icons.edit_rounded, color: AdminPalette.accent),
+                icon: Icon(
+                  Icons.edit_rounded,
+                  color: record.bundled
+                      ? AdminPalette.accent.withValues(alpha: 0.35)
+                      : AdminPalette.accent,
+                ),
               ),
               IconButton(
-                tooltip: 'Delete',
+                tooltip:
+                    record.bundled ? 'Built-in - cannot be deleted' : 'Delete',
                 onPressed: onDelete,
-                icon: const Icon(Icons.delete_rounded, color: AdminPalette.danger),
+                icon: Icon(
+                  Icons.delete_rounded,
+                  color: record.bundled
+                      ? AdminPalette.danger.withValues(alpha: 0.3)
+                      : AdminPalette.danger,
+                ),
               ),
             ],
           ),

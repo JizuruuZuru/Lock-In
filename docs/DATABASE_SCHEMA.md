@@ -390,7 +390,7 @@ flowchart LR
 | `quiz_questions` | any signed-in user | admin | admin | admin |
 | `leaderboard_entries` | any signed-in user | owner (by document id) | owner | owner |
 | `exam_attempts` | owner or admin | owner | admin | admin |
-| `exam_sessions` | owner or admin | any signed-in user | any signed-in user | admin |
+| `exam_sessions` | owner or admin | owner | owner or admin | admin |
 
 ### The two rules that matter most
 
@@ -402,6 +402,14 @@ from the Firebase console — the rules would refuse to let the app do it.
 **A disabled admin is not an admin.** `isAdmin()` requires
 `disabled != true` as well as `role == 'admin'`, so deactivating an admin
 revokes their write access immediately rather than at their next sign-in.
+
+**Owning a top-level document means owning its `uid` field.** `exam_attempts`
+and `exam_sessions` both sit outside `users/{uid}`, so nothing about the
+document path proves who they belong to. Both therefore check the `uid` the
+client wrote (`request.resource.data.uid == request.auth.uid` on create) and
+the `uid` already stored (`ownsDoc()` on update). `exam_sessions` used to
+accept a create or update from *any* signed-in account, which let one student
+overwrite another's session record.
 
 ---
 

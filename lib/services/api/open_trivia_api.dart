@@ -44,7 +44,7 @@ class TriviaQuestion {
       question: _decode(json['question']),
       correctAnswer: _decode(json['correct_answer']),
       incorrectAnswers: (json['incorrect_answers'] as List<dynamic>? ?? const [])
-          .map((item) => _decode(item))
+          .map(_decode)
           .toList(growable: false),
     );
   }

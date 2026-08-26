@@ -260,6 +260,13 @@ class _MathGameState extends State<MathGame> with WidgetsBindingObserver {
 
     await _stopFaceProctor();
 
+    // Stopping the proctor tears down the camera and the ML Kit detector,
+    // which is slow enough that the player can leave the screen first.
+    if (!mounted) {
+      _processingLeaveAttempt = false;
+      return;
+    }
+
     setState(() {
       isGameOver = true;
       showCorrectSplash = false;
@@ -1064,7 +1071,7 @@ class _MathGameState extends State<MathGame> with WidgetsBindingObserver {
   }
 
   Widget _buildModeSelection() {
-    final modes = MathMode.values;
+    const modes = MathMode.values;
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.maxWidth.isFinite
@@ -1250,11 +1257,11 @@ class _MathGameState extends State<MathGame> with WidgetsBindingObserver {
         _card(
           child: Column(
             children: [
-              Align(
+              const Align(
                 alignment: Alignment.centerRight,
                 child: IconButton(
                   onPressed: null,
-                  icon: const Icon(Icons.record_voice_over_rounded),
+                  icon: Icon(Icons.record_voice_over_rounded),
                   tooltip: 'Replay question voice',
                 ),
               ),

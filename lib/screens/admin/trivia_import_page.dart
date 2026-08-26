@@ -12,6 +12,7 @@ import '../../services/sound_service.dart';
 import '../../utils/admin_theme.dart';
 import '../../utils/responsive_layout.dart';
 import '../../widgets/offline_banner.dart';
+import '../../widgets/source_link.dart';
 
 /// The API integration screen.
 ///
@@ -221,7 +222,7 @@ class _TriviaImportPageState extends State<TriviaImportPage> {
 
     return AdminScaffold(
       title: 'Import Questions',
-      subtitle: 'Open Trivia DB - opentdb.com',
+      subtitle: 'Borrow ready-made questions, then keep the ones you like',
       actions: [
         if (_result != null)
           IconButton(
@@ -262,66 +263,30 @@ class _TriviaImportPageState extends State<TriviaImportPage> {
   }
 
   Widget _aboutPanel() {
-    return AdminPanel(
-      color: const Color(0xFFFFF6EC),
-      borderColor: const Color(0xFFEF6C00),
+    return const AdminPanel(
+      color: Color(0xFFFFF6EC),
+      borderColor: Color(0xFFEF6C00),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const AdminSectionHeader(
+          AdminSectionHeader(
             icon: Icons.public_rounded,
-            title: 'Open Trivia Database',
+            title: 'Where these questions come from',
             caption:
-                'A free, key-less question API. We request multiple-choice questions over HTTP GET, then save the ones you keep to your own database over HTTP POST.',
+                'Questions are borrowed from the Open Trivia Database, a free '
+                'community-run quiz library. Pick a category below, look through '
+                'what comes back, and keep only the ones you want.',
           ),
-          const SizedBox(height: 12),
-          _endpointRow('GET', 'https://opentdb.com/api_category.php'),
-          const SizedBox(height: 6),
-          _endpointRow('GET', 'https://opentdb.com/api.php?amount=...&type=multiple'),
-          const SizedBox(height: 6),
-          _endpointRow('POST', '${_restApi.documentsBaseUrl}/quiz_questions'),
+          SizedBox(height: 4),
+          SourceLink(
+            url: 'https://opentdb.com',
+            label: 'Visit opentdb.com',
+            description:
+                'Browse the full library, see who writes the questions, and '
+                'read the terms they are shared under.',
+          ),
         ],
       ),
-    );
-  }
-
-  Widget _endpointRow(String method, String url) {
-    final isPost = method == 'POST';
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          width: 46,
-          padding: const EdgeInsets.symmetric(vertical: 3),
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: isPost ? AdminPalette.success : const Color(0xFF1976D2),
-            borderRadius: BorderRadius.circular(6),
-          ),
-          child: Text(
-            method,
-            style: const TextStyle(
-              fontSize: 10,
-              fontWeight: FontWeight.w900,
-              color: Colors.white,
-              letterSpacing: 0.6,
-            ),
-          ),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text(
-            url,
-            style: const TextStyle(
-              fontSize: 11.5,
-              fontWeight: FontWeight.w700,
-              fontFamily: 'monospace',
-              height: 1.4,
-              color: AdminPalette.ink,
-            ),
-          ),
-        ),
-      ],
     );
   }
 

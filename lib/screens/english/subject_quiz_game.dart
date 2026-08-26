@@ -9,12 +9,11 @@ import '../../data/subject_question_bank.dart';
 import '../../services/connectivity_service.dart';
 import '../../services/face_proctor_service.dart';
 import '../../services/game_logger.dart';
-import '../../services/offline_subject_question_bank.dart';
-import '../../services/subject_lesson_bank.dart';
 import '../../services/leaderboard_service.dart';
 import '../../services/leave_attempt_logger.dart';
 import '../../services/sound_service.dart';
 import '../../utils/game_difficulty_mode.dart';
+import '../../utils/game_key.dart';
 import '../../utils/responsive_layout.dart';
 import '../../widgets/animated_shape_background.dart';
 import '../../widgets/app_brightness_overlay.dart';
@@ -86,15 +85,6 @@ class _SubjectQuizGameState extends State<SubjectQuizGame> {
       ? '${_config.title} Quiz'
       : '${_config.title}: ${widget.lessonTitle}';
 
-  String _safeScoreKey(String value) {
-    return value
-        .trim()
-        .toLowerCase()
-        .replaceAll(RegExp(r'[^a-z0-9]+'), '_')
-        .replaceAll(RegExp(r'_+'), '_')
-        .replaceAll(RegExp(r'^_|_$'), '');
-  }
-
   @override
   void initState() {
     super.initState();
@@ -141,49 +131,21 @@ class _SubjectQuizGameState extends State<SubjectQuizGame> {
     return (24 - min(level, 8)).clamp(15, 23).toInt();
   }
 
+  /// Draws the next question from [SubjectQuestionBank] - the bundled bank
+  /// plus whatever an admin has published.
+  ///
+  /// [SubjectQuizGame.allowedTopics] narrows it to one lesson's topics. A
+  /// filter that matches nothing widens back to the whole subject inside the
+  /// bank, so a renamed topic degrades to "more questions" rather than none.
   void generateQuestion() {
-    if (widget.allowedTopics != null && widget.allowedTopics!.isNotEmpty) {
-      final nextQuestion = SubjectQuestionBank.randomQuestion(
-        subject: widget.subject,
-        level: level,
-        random: _random,
-        topics: widget.allowedTopics,
-        excludeKeys: _askedQuestionKeys,
-      );
-      _askedQuestionKeys.add(SubjectQuestionBank.questionKey(nextQuestion));
-
-      setState(() {
-        question = nextQuestion;
-        selectedAnswer = '';
-        isGameOver = false;
-        timerKey = UniqueKey();
-        timeLimit = _timeLimitForLevel();
-      });
-      return;
-    }
-
-    final offlineSubject = widget.subject == SubjectQuizType.science
-        ? OfflineSubject.science
-        : OfflineSubject.english;
-    final offlineQuestions = OfflineSubjectQuestionBank.questionsFor(
-      offlineSubject,
-      count: 32,
+    final nextQuestion = SubjectQuestionBank.randomQuestion(
+      subject: widget.subject,
+      level: level,
+      random: _random,
       topics: widget.allowedTopics,
+      excludeKeys: _askedQuestionKeys,
     );
-
-    final offlineQuestion = offlineQuestions.isEmpty
-        ? null
-        : offlineQuestions[_random.nextInt(offlineQuestions.length)];
-
-    final nextQuestion = offlineQuestion == null
-        ? _buildFallbackQuestion()
-        : SubjectQuizQuestion(
-            topic: offlineQuestion.topic,
-            instruction: offlineQuestion.topic,
-            prompt: offlineQuestion.prompt,
-            correctAnswer: offlineQuestion.answer,
-            choices: offlineQuestion.choices,
-          );
+    _askedQuestionKeys.add(SubjectQuestionBank.questionKey(nextQuestion));
 
     setState(() {
       question = nextQuestion;
@@ -192,25 +154,6 @@ class _SubjectQuizGameState extends State<SubjectQuizGame> {
       timerKey = UniqueKey();
       timeLimit = _timeLimitForLevel();
     });
-  }
-
-  SubjectQuizQuestion _buildFallbackQuestion() {
-    final lessonSubject = widget.subject == SubjectQuizType.science
-        ? SubjectLessonSubject.science
-        : SubjectLessonSubject.english;
-    final lessonQuestion = SubjectLessonBank.randomQuestion(
-      subject: lessonSubject,
-      random: _random,
-      topics: widget.allowedTopics,
-    );
-
-    return SubjectQuizQuestion(
-      topic: lessonQuestion.topic,
-      instruction: lessonQuestion.topic,
-      prompt: lessonQuestion.prompt,
-      correctAnswer: lessonQuestion.answer,
-      choices: lessonQuestion.options,
-    );
   }
 
   bool _isCorrectChoice(String choice) {
@@ -378,7 +321,7 @@ class _SubjectQuizGameState extends State<SubjectQuizGame> {
 
       final subjectKey = widget.subject.name;
       final quizKey =
-          '${subjectKey}_${_safeScoreKey(widget.lessonTitle ?? 'quiz')}';
+          '${subjectKey}_${safeGameKey(widget.lessonTitle ?? 'quiz')}';
       final highscoreKey = '${quizKey}_highscore';
       final firestore = FirebaseFirestore.instance;
       final userRef = firestore.collection('users').doc(user.uid);
@@ -387,18 +330,13 @@ class _SubjectQuizGameState extends State<SubjectQuizGame> {
         gameName: _gameName,
         score: score,
         difficulty: gameDifficultyModeLabel(_selectedMode),
+        extraHighscoreFields: {highscoreKey: score},
       );
-
-      final snapshot = await userRef.get();
-      final previousHighscore = snapshot.data()?[highscoreKey];
-      final currentHighscore =
-          previousHighscore is num ? previousHighscore.toInt() : 0;
 
       await userRef.set({
         '${quizKey}_last_score': score,
         '${quizKey}_last_level': level,
         '${quizKey}_last_played': FieldValue.serverTimestamp(),
-        if (score > currentHighscore) highscoreKey: score,
       }, SetOptions(merge: true));
 
       if (score > 0) {

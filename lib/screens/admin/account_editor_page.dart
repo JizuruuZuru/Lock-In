@@ -385,17 +385,17 @@ class _AccountEditorPageState extends State<AccountEditorPage> {
             onChanged: (value) {
               if (value != null) setState(() => _role = value);
             },
-            child: Column(
+            child: const Column(
               children: [
                 RadioListTile<UserRole>(
                   value: UserRole.student,
                   contentPadding: EdgeInsets.zero,
                   activeColor: AdminPalette.success,
-                  title: const Text(
+                  title: Text(
                     'Student',
                     style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800),
                   ),
-                  subtitle: const Text(
+                  subtitle: Text(
                     'Plays the games and appears on leaderboards.',
                     style: TextStyle(
                       fontSize: 12.5,
@@ -408,11 +408,11 @@ class _AccountEditorPageState extends State<AccountEditorPage> {
                   value: UserRole.admin,
                   contentPadding: EdgeInsets.zero,
                   activeColor: AdminPalette.accent,
-                  title: const Text(
+                  title: Text(
                     'Admin / Teacher',
                     style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800),
                   ),
-                  subtitle: const Text(
+                  subtitle: Text(
                     'Full access to questions and every account.',
                     style: TextStyle(
                       fontSize: 12.5,

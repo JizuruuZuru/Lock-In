@@ -501,19 +501,13 @@ class _OrderOperationsGameState extends State<OrderOperationsGame> {
         gameName: _gameName,
         score: score,
         difficulty: gameDifficultyModeLabel(_selectedMode),
+        extraHighscoreFields: {'order_operations_highscore': score},
       );
-
-      final snapshot = await userRef.get();
-      final previousHighscore = snapshot.data()?['order_operations_highscore'];
-      final currentHighscore = previousHighscore is num
-          ? previousHighscore.toInt()
-          : 0;
 
       await userRef.set({
         'order_operations_last_score': score,
         'order_operations_last_level': level,
         'order_operations_last_played': FieldValue.serverTimestamp(),
-        if (score > currentHighscore) 'order_operations_highscore': score,
       }, SetOptions(merge: true));
 
       if (score > 0) {

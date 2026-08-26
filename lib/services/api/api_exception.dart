@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'package:http/http.dart' as http;
+
 /// A network/API failure that already carries a message safe to show a child.
 ///
 /// Every API service in `lib/services/api/` funnels its failures through this
@@ -19,6 +21,15 @@ class ApiException implements Exception {
   /// Turns a low-level exception into a message a user can act on.
   factory ApiException.from(Object error) {
     if (error is ApiException) return error;
+    // On the web `dart:io` is a stub that is never thrown from: the browser
+    // client reports every transport failure as a ClientException instead, so
+    // it is checked first or a web user would only ever see the generic
+    // fallback message below.
+    if (error is http.ClientException) {
+      return const ApiException(
+        'No internet connection. Check your Wi-Fi and try again.',
+      );
+    }
     if (error is SocketException) {
       return const ApiException(
         'No internet connection. Check your Wi-Fi and try again.',

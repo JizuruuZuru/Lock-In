@@ -100,7 +100,8 @@ class _FractionValue {
   String asDecimalString() {
     final decimal = value;
     final fixed = decimal.toStringAsFixed(3);
-    return fixed.replaceFirst(RegExp(r'0+$'), '').replaceFirst(RegExp(r'\.$'), '');
+    return fixed.replaceFirst(_fractionTrailingZeros, '')
+        .replaceFirst(_fractionTrailingDot, '');
   }
 
   @override
@@ -735,7 +736,7 @@ class _FractionsGameState extends State<FractionsGame> {
       final char = text[i];
       if (i == 0) {
         buffer.write(char.toUpperCase());
-      } else if (char.toUpperCase() == char && RegExp(r'[A-Z]').hasMatch(char)) {
+      } else if (char.toUpperCase() == char && _fractionUpperCase.hasMatch(char)) {
         buffer.write(' $char');
       } else {
         buffer.write(char);
@@ -821,7 +822,7 @@ class _FractionsGameState extends State<FractionsGame> {
     return value
         .trim()
         .replaceAll(',', '')
-        .replaceAll(RegExp(r'\s+'), ' ')
+        .replaceAll(_fractionWhitespaceRun, ' ')
         .toLowerCase();
   }
 
@@ -963,19 +964,13 @@ class _FractionsGameState extends State<FractionsGame> {
         gameName: _gameName,
         score: score,
         difficulty: gameDifficultyModeLabel(_selectedMode),
+        extraHighscoreFields: {'fractions_highscore': score},
       );
-
-      final snapshot = await userRef.get();
-      final previousHighscore = snapshot.data()?['fractions_highscore'];
-      final currentHighscore = previousHighscore is num
-          ? previousHighscore.toInt()
-          : 0;
 
       await userRef.set({
         'fractions_last_score': score,
         'fractions_last_level': level,
         'fractions_last_played': FieldValue.serverTimestamp(),
-        if (score > currentHighscore) 'fractions_highscore': score,
       }, SetOptions(merge: true));
 
       if (score > 0) {
@@ -1624,7 +1619,7 @@ class _FractionAnswerPad extends StatelessWidget {
     final actionGap = (spacing * 5.0).clamp(24.0, 44.0).toDouble();
     final contentWidth = width - padding * 2;
 
-    final rows = const [
+    const rows = [
       ['1', '2', '3', '/'],
       ['4', '5', '6', 'SPACE'],
       ['7', '8', '9', '.'],
@@ -1735,7 +1730,7 @@ class _FractionAnswerPad extends StatelessWidget {
 
     final char = event.character;
     if (char != null &&
-        (RegExp(r'^[0-9./<>=]$').hasMatch(char))) {
+        (_fractionAllowedKey.hasMatch(char))) {
       onTap(char);
       return KeyEventResult.handled;
     }
@@ -1921,3 +1916,11 @@ class _PieFractionPainter extends CustomPainter {
         oldDelegate.lineColor != lineColor;
   }
 }
+
+/// Compiled once. These ran on every keypress and on every frame that
+/// formatted a fraction as a decimal.
+final RegExp _fractionTrailingZeros = RegExp(r'0+$');
+final RegExp _fractionTrailingDot = RegExp(r'\.$');
+final RegExp _fractionUpperCase = RegExp(r'[A-Z]');
+final RegExp _fractionWhitespaceRun = RegExp(r'\s+');
+final RegExp _fractionAllowedKey = RegExp(r'^[0-9./<>=]$');

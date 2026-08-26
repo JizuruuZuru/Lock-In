@@ -121,6 +121,13 @@ class _ExamQuestion {
   }
 }
 
+/// A question generator paired with the subject it asks about, so the subject
+/// filter never has to generate a question just to classify it.
+typedef _ExamQuestionBuilder = ({
+  ExamSubjectSelection subject,
+  _ExamQuestion Function() build,
+});
+
 class _ExamGameState extends State<ExamGame> {
   static const Color _inkColor = Color(0xFF2F5233);
   static const Color _bgTopColor = Color(0xFFE6F7E6);
@@ -209,36 +216,47 @@ class _ExamGameState extends State<ExamGame> {
 
   int _rand(int min, int max) => min + _random.nextInt(max - min + 1);
 
-  List<_ExamQuestion Function()> _buildQuestionPool() {
+  /// The builders for [widget.difficulty], each tagged with the subject it
+  /// asks about.
+  ///
+  /// The tag is declared here rather than derived from the question's topic,
+  /// because deriving it meant *building* a question purely to read its topic
+  /// and then throwing it away - once per candidate, on every question the
+  /// player was served, and consuming random state as a side effect.
+  List<_ExamQuestionBuilder> _buildQuestionPool() {
+    const math = ExamSubjectSelection.math;
+    const english = ExamSubjectSelection.english;
+    const science = ExamSubjectSelection.science;
+
     final baseBuilders = switch (widget.difficulty) {
-      ExamDifficulty.easy => <_ExamQuestion Function()>[
-          _additionQuestion,
-          _subtractionQuestion,
-          _romanQuestion,
-          _placeValueQuestion,
-          _englishGrammarQuestion,
-          _englishReadingQuestion,
-          _scienceLivingThingQuestion,
-          _scienceWeatherQuestion,
+      ExamDifficulty.easy => <_ExamQuestionBuilder>[
+          (subject: math, build: _additionQuestion),
+          (subject: math, build: _subtractionQuestion),
+          (subject: math, build: _romanQuestion),
+          (subject: math, build: _placeValueQuestion),
+          (subject: english, build: _englishGrammarQuestion),
+          (subject: english, build: _englishReadingQuestion),
+          (subject: science, build: _scienceLivingThingQuestion),
+          (subject: science, build: _scienceWeatherQuestion),
         ],
-      ExamDifficulty.medium => <_ExamQuestion Function()>[
-          _multiplicationQuestion,
-          _divisionQuestion,
-          _roundingQuestion,
-          _analogClockQuestion,
-          _englishVocabularyQuestion,
-          _englishPhonicsQuestion,
-          _scienceBodyQuestion,
-          _scienceEnergyQuestion,
+      ExamDifficulty.medium => <_ExamQuestionBuilder>[
+          (subject: math, build: _multiplicationQuestion),
+          (subject: math, build: _divisionQuestion),
+          (subject: math, build: _roundingQuestion),
+          (subject: math, build: _analogClockQuestion),
+          (subject: english, build: _englishVocabularyQuestion),
+          (subject: english, build: _englishPhonicsQuestion),
+          (subject: science, build: _scienceBodyQuestion),
+          (subject: science, build: _scienceEnergyQuestion),
         ],
-      ExamDifficulty.hard => <_ExamQuestion Function()>[
-          _orderOperationsQuestion,
-          _fractionQuestion,
-          _measurementQuestion,
-          _englishGrammarQuestion,
-          _englishReadingQuestion,
-          _scienceMatterQuestion,
-          _scienceSpaceQuestion,
+      ExamDifficulty.hard => <_ExamQuestionBuilder>[
+          (subject: math, build: _orderOperationsQuestion),
+          (subject: math, build: _fractionQuestion),
+          (subject: math, build: _measurementQuestion),
+          (subject: english, build: _englishGrammarQuestion),
+          (subject: english, build: _englishReadingQuestion),
+          (subject: science, build: _scienceMatterQuestion),
+          (subject: science, build: _scienceSpaceQuestion),
         ],
     };
 
@@ -246,19 +264,13 @@ class _ExamGameState extends State<ExamGame> {
       return baseBuilders;
     }
 
-    final filtered = baseBuilders.where((builder) {
-      return _selectedSubjects.contains(_topicCategory(builder().topic));
-    }).toList();
+    final filtered = baseBuilders
+        .where((item) => _selectedSubjects.contains(item.subject))
+        .toList();
 
     // Guard against an empty pool (shouldn't happen — the chips always
     // keep at least one subject selected) rather than crashing the exam.
     return filtered.isEmpty ? baseBuilders : filtered;
-  }
-
-  ExamSubjectSelection _topicCategory(String topic) {
-    if (_isEnglishTopic(topic)) return ExamSubjectSelection.english;
-    if (_isScienceTopic(topic)) return ExamSubjectSelection.science;
-    return ExamSubjectSelection.math;
   }
 
   bool _isEnglishTopic(String topic) {
@@ -287,7 +299,8 @@ class _ExamGameState extends State<ExamGame> {
       return;
     }
 
-    final next = builders[_random.nextInt(builders.length)]()
+    final next = builders[_random.nextInt(builders.length)]
+        .build()
         .shuffledChoices(_random);
     setState(() {
       question = next;
@@ -304,7 +317,7 @@ class _ExamGameState extends State<ExamGame> {
   }
 
   _ExamQuestion _englishGrammarQuestion() {
-    return _ExamQuestion(
+    return const _ExamQuestion(
       topic: 'English: Grammar',
       instruction: 'Choose the noun in the sentence.',
       prompt: 'The bright cat sat on the mat.',
@@ -314,7 +327,7 @@ class _ExamGameState extends State<ExamGame> {
   }
 
   _ExamQuestion _englishReadingQuestion() {
-    return _ExamQuestion(
+    return const _ExamQuestion(
       topic: 'English: Reading',
       instruction: 'Choose the main idea.',
       prompt: 'Mia found a red bird in the garden and fed it.',
@@ -329,7 +342,7 @@ class _ExamGameState extends State<ExamGame> {
   }
 
   _ExamQuestion _englishVocabularyQuestion() {
-    return _ExamQuestion(
+    return const _ExamQuestion(
       topic: 'English: Vocabulary',
       instruction: 'Choose the word with a similar meaning.',
       prompt: 'Which word means almost the same as happy?',
@@ -339,7 +352,7 @@ class _ExamGameState extends State<ExamGame> {
   }
 
   _ExamQuestion _englishPhonicsQuestion() {
-    return _ExamQuestion(
+    return const _ExamQuestion(
       topic: 'English: Phonics',
       instruction: 'Choose the word that begins with the sh sound.',
       prompt: 'Which word begins with the /sh/ sound?',
@@ -349,7 +362,7 @@ class _ExamGameState extends State<ExamGame> {
   }
 
   _ExamQuestion _scienceLivingThingQuestion() {
-    return _ExamQuestion(
+    return const _ExamQuestion(
       topic: 'Science: Living Things',
       instruction: 'Choose the living thing.',
       prompt: 'Which one is alive?',
@@ -359,7 +372,7 @@ class _ExamGameState extends State<ExamGame> {
   }
 
   _ExamQuestion _scienceWeatherQuestion() {
-    return _ExamQuestion(
+    return const _ExamQuestion(
       topic: 'Science: Weather',
       instruction: 'Choose what we wear when it is cold.',
       prompt: 'What do we wear on a cold day?',
@@ -369,7 +382,7 @@ class _ExamGameState extends State<ExamGame> {
   }
 
   _ExamQuestion _scienceBodyQuestion() {
-    return _ExamQuestion(
+    return const _ExamQuestion(
       topic: 'Science: Human Body',
       instruction: 'Choose the body part used for breathing.',
       prompt: 'Which organs help you breathe?',
@@ -379,7 +392,7 @@ class _ExamGameState extends State<ExamGame> {
   }
 
   _ExamQuestion _scienceEnergyQuestion() {
-    return _ExamQuestion(
+    return const _ExamQuestion(
       topic: 'Science: Energy',
       instruction: 'Choose what gives us light and heat.',
       prompt: 'What gives Earth light and heat?',
@@ -389,7 +402,7 @@ class _ExamGameState extends State<ExamGame> {
   }
 
   _ExamQuestion _scienceMatterQuestion() {
-    return _ExamQuestion(
+    return const _ExamQuestion(
       topic: 'Science: Matter',
       instruction: 'Choose the state of matter for ice.',
       prompt: 'Ice is water in which state?',
@@ -399,7 +412,7 @@ class _ExamGameState extends State<ExamGame> {
   }
 
   _ExamQuestion _scienceSpaceQuestion() {
-    return _ExamQuestion(
+    return const _ExamQuestion(
       topic: 'Science: Space',
       instruction: 'Choose what Earth travels around.',
       prompt: 'Earth goes around the ___ .',
@@ -688,7 +701,7 @@ class _ExamGameState extends State<ExamGame> {
 
   String _decimalString(double value) {
     final s = value.toStringAsFixed(2);
-    return s.endsWith('00') ? value.toStringAsFixed(0) : s.replaceFirst(RegExp(r'0$'), '');
+    return s.endsWith('00') ? value.toStringAsFixed(0) : s.replaceFirst(_examTrailingZero, '');
   }
 
   _ExamQuestion _measurementQuestion() {
@@ -763,7 +776,7 @@ class _ExamGameState extends State<ExamGame> {
         .replaceAll(',', '')
         .replaceAll('×', 'x')
         .replaceAll('÷', '/')
-        .replaceAll(RegExp(r'\s+'), ' ')
+        .replaceAll(_examWhitespaceRun, ' ')
         .trim();
   }
 
@@ -1022,17 +1035,13 @@ class _ExamGameState extends State<ExamGame> {
         gameName: _gameName,
         score: score,
         difficulty: gameDifficultyModeLabel(_selectedMode),
+        extraHighscoreFields: {highscoreKey: score},
       );
-
-      final snapshot = await userRef.get();
-      final previousHighscore = snapshot.data()?[highscoreKey];
-      final currentHighscore = previousHighscore is num ? previousHighscore.toInt() : 0;
 
       await userRef.set({
         '${_difficultyName.toLowerCase()}_exam_last_score': score,
         '${_difficultyName.toLowerCase()}_exam_last_level': level,
         '${_difficultyName.toLowerCase()}_exam_last_played': FieldValue.serverTimestamp(),
-        if (score > currentHighscore) highscoreKey: score,
       }, SetOptions(merge: true));
 
       if (score > 0) {
@@ -1342,17 +1351,17 @@ class _ExamGameState extends State<ExamGame> {
                           width: 1.5,
                         ),
                       ),
-                      child: Row(
+                      child: const Row(
                         children: [
-                          const Icon(
+                          Icon(
                             Icons.wifi_off_rounded,
                             color: Color(0xFFE65100),
                           ),
-                          const SizedBox(width: 10),
+                          SizedBox(width: 10),
                           Expanded(
                             child: Text(
                               'No connection detected. This exam can still play locally, but its history will stay on the device until you reconnect.',
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w800,
                               ),
@@ -1557,7 +1566,7 @@ class _ExamKeypad extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final rows = const [
+    const rows = [
       ['1', '2', '3', '/', '.'],
       ['4', '5', '6', ':', '-'],
       ['7', '8', '9', 'space', '⌫'],
@@ -1713,7 +1722,7 @@ class _ExamKeypad extends StatelessWidget {
     }
 
     final char = event.character;
-    if (char != null && RegExp(r'^[0-9./:-]$').hasMatch(char)) {
+    if (char != null && _examAllowedKey.hasMatch(char)) {
       onTap(char);
       return KeyEventResult.handled;
     }
@@ -1841,3 +1850,9 @@ class _AnalogExamClockPainter extends CustomPainter {
     return oldDelegate.hour != hour || oldDelegate.minute != minute;
   }
 }
+
+/// Compiled once. These ran on every keypress and on every frame that
+/// formatted a number.
+final RegExp _examTrailingZero = RegExp(r'0$');
+final RegExp _examWhitespaceRun = RegExp(r'\s+');
+final RegExp _examAllowedKey = RegExp(r'^[0-9./:-]$');

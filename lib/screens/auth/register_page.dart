@@ -506,7 +506,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                     SoundService().playButtonSoundNow();
                                     Navigator.pop(context);
                                   },
-                                  child: Text(
+                                  child: const Text(
                                     'Already have an account? Login',
                                     style: TextStyle(
                                       color: _accentColor,

@@ -6,6 +6,7 @@ import '../../models/app_user_record.dart';
 import '../../models/quiz_question_record.dart';
 import '../../services/custom_question_sync.dart';
 import '../../services/question_repository.dart';
+import '../../services/leaderboard_service.dart';
 import '../../services/sound_service.dart';
 import '../../services/user_admin_repository.dart';
 import '../../utils/admin_theme.dart';
@@ -32,6 +33,14 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
   final QuestionRepository _questions = QuestionRepository();
   final UserAdminRepository _accounts = UserAdminRepository();
 
+  /// Held in state so a rebuild does not open a fresh set of Firestore
+  /// listeners. Two of the three stat cards read the same question
+  /// collection, so they share one subscription rather than opening two.
+  late final Stream<List<QuizQuestionRecord>> _questionStream =
+      _questions.watchQuestions();
+  late final Stream<List<AppUserRecord>> _accountStream =
+      _accounts.watchAccounts();
+
   @override
   void initState() {
     super.initState();
@@ -48,6 +57,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
     );
     if (!confirmed || !mounted) return;
 
+    resetPlayerNameCache();
     await FirebaseAuth.instance.signOut();
     if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
@@ -233,7 +243,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
   Widget _statsRow(bool isWide) {
     final cards = [
       StreamBuilder<List<QuizQuestionRecord>>(
-        stream: _questions.watchQuestions(),
+        stream: _questionStream,
         builder: (context, snapshot) {
           final all = snapshot.data;
           return _StatCard(
@@ -249,7 +259,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
         },
       ),
       StreamBuilder<List<AppUserRecord>>(
-        stream: _accounts.watchAccounts(),
+        stream: _accountStream,
         builder: (context, snapshot) {
           final all = snapshot.data;
           final active = all?.where((user) => !user.disabled).length;
@@ -264,7 +274,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
         },
       ),
       StreamBuilder<List<QuizQuestionRecord>>(
-        stream: _questions.watchQuestions(),
+        stream: _questionStream,
         builder: (context, snapshot) {
           final imported = snapshot.data
               ?.where((q) => q.source == QuestionSource.openTrivia)
@@ -330,9 +340,11 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
       ),
       _ActionTile(
         icon: Icons.lan_rounded,
-        title: 'API Console',
+        title: 'Connection Check',
         description:
-            'Run every endpoint the app uses - GET, POST, PATCH, and DELETE - and read the real request and response for each one.',
+            'Check the app can reach the internet services it needs, and that '
+            'questions can be saved, edited, searched, and deleted. Safe to run '
+            'any time - it cleans up after itself.',
         color: const Color(0xFF1976D2),
         onTap: () => _open(const ApiConsolePage()),
       ),

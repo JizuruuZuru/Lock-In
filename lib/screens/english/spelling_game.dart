@@ -14,6 +14,7 @@ import '../../services/leave_attempt_logger.dart';
 import '../../services/sound_service.dart';
 import '../../services/text_to_speech_service.dart';
 import '../../utils/game_difficulty_mode.dart';
+import '../../utils/game_key.dart';
 import '../../utils/responsive_layout.dart';
 import '../../widgets/alphabet_keyboard.dart';
 import '../../widgets/animated_shape_background.dart';
@@ -39,7 +40,18 @@ class _SpellingWord {
     required this.minLevel,
   });
 
-  String get sentenceWithBlank {
+  /// The example sentence with the word replaced by a blank.
+  ///
+  /// Read while building every frame the word is on screen, and the pattern
+  /// depends on the word, so it cannot be a plain constant - the results are
+  /// memoized instead. There are only ever a hundred or so spelling words, so
+  /// the cache stays tiny and is never invalidated.
+  String get sentenceWithBlank =>
+      _blankCache[word] ??= _buildSentenceWithBlank();
+
+  static final Map<String, String> _blankCache = <String, String>{};
+
+  String _buildSentenceWithBlank() {
     final blank = '_' * word.length;
     final pattern = RegExp(RegExp.escape(word), caseSensitive: false);
     return sentence.replaceAll(pattern, blank);
@@ -168,15 +180,6 @@ class _EnglishSpellingGameState extends State<EnglishSpellingGame> {
 
   String get _typedInput => typedLetters.join();
 
-  String _safeScoreKey(String value) {
-    return value
-        .trim()
-        .toLowerCase()
-        .replaceAll(RegExp(r'[^a-z0-9]+'), '_')
-        .replaceAll(RegExp(r'_+'), '_')
-        .replaceAll(RegExp(r'^_|_$'), '');
-  }
-
   @override
   void initState() {
     super.initState();
@@ -241,14 +244,24 @@ class _EnglishSpellingGameState extends State<EnglishSpellingGame> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _speakCurrentWord());
   }
 
-  Future<void> _speakCurrentWord() async {
-    await TextToSpeechService().speak(currentWord.word);
+  /// Reads the word aloud with its example sentence, the way a spelling bee
+  /// does. The sentence is the same one shown on screen with the word blanked
+  /// out, so hearing it does not give the spelling away - it just makes the
+  /// word clear, and gives the speech engine a real sentence to draw its
+  /// intonation from instead of a single clipped word.
+  Future<void> _speakCurrentWord({bool repeat = false}) async {
+    await TextToSpeechService().speakSpellingWord(
+      currentWord.word,
+      sentence: currentWord.sentence,
+      repeat: repeat,
+    );
   }
 
   void _replaySound() {
     if (isGameOver) return;
     SoundService().playButtonSoundNow();
-    _speakCurrentWord();
+    // A replay skips the "The word is" preamble - by now they know.
+    _speakCurrentWord(repeat: true);
   }
 
   void _onLetterTap(String letter) {
@@ -415,7 +428,7 @@ class _EnglishSpellingGameState extends State<EnglishSpellingGame> {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) return;
 
-      final quizKey = 'english_${_safeScoreKey('spelling')}';
+      final quizKey = 'english_${safeGameKey('spelling')}';
       final highscoreKey = '${quizKey}_highscore';
       final firestore = FirebaseFirestore.instance;
       final userRef = firestore.collection('users').doc(user.uid);
@@ -424,18 +437,13 @@ class _EnglishSpellingGameState extends State<EnglishSpellingGame> {
         gameName: _gameName,
         score: score,
         difficulty: gameDifficultyModeLabel(_selectedMode),
+        extraHighscoreFields: {highscoreKey: score},
       );
-
-      final snapshot = await userRef.get();
-      final previousHighscore = snapshot.data()?[highscoreKey];
-      final currentHighscore =
-          previousHighscore is num ? previousHighscore.toInt() : 0;
 
       await userRef.set({
         '${quizKey}_last_score': score,
         '${quizKey}_last_level': level,
         '${quizKey}_last_played': FieldValue.serverTimestamp(),
-        if (score > currentHighscore) highscoreKey: score,
       }, SetOptions(merge: true));
 
       if (score > 0) {

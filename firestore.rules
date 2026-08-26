@@ -107,8 +107,13 @@ service cloud.firestore {
 
     match /exam_sessions/{sessionId} {
       allow read: if isAdmin() || ownsDoc();
-      allow create: if isSignedIn();
-      allow update: if isSignedIn();
+      // A session document carries the player's uid, so the same ownership
+      // check exam_attempts uses applies here. Without it any signed-in
+      // account could overwrite another player's exam session.
+      allow create: if isSignedIn()
+        && 'uid' in request.resource.data
+        && request.resource.data.uid == request.auth.uid;
+      allow update: if isAdmin() || ownsDoc();
       allow delete: if isAdmin();
     }
   }

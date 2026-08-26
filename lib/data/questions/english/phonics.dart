@@ -292,7 +292,7 @@ const List<_LeveledQuestion> _englishPhonicsQuestions = [
       instruction: 'Choose the correct plural spelling.',
       prompt: 'What is the correct plural of \'cat\'?',
       correctAnswer: 'cats',
-      choices: ['cates', 'catss', 'cates'],
+      choices: ['cates', 'catss', "cat's"],
     ),
   ),
   _LeveledQuestion(

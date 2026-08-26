@@ -171,9 +171,13 @@ class DictionaryApi {
     return word
         .trim()
         .toLowerCase()
-        .replaceAll(RegExp(r"[^a-z'-]"), '')
-        .replaceAll(RegExp(r"^[''-]+|[''-]+$"), '');
+        .replaceAll(_nonWordCharacters, '')
+        .replaceAll(_edgePunctuation, '');
   }
 
   void dispose() => _client.close();
 }
+
+/// Compiled once rather than on every word a student taps.
+final RegExp _nonWordCharacters = RegExp(r"[^a-z'-]");
+final RegExp _edgePunctuation = RegExp(r"^['-]+|['-]+$");

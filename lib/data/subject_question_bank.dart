@@ -72,9 +72,13 @@ class SubjectQuizQuestion {
     final uniqueChoices = <String>[];
 
     void addChoice(String choice) {
-      final normalizedChoice = _normalize(choice);
+      // Case-sensitive on purpose. Capitalization and punctuation questions
+      // are built from answers that differ *only* in case - "The dog ran
+      // home." against "the dog ran home." - so folding case here deleted
+      // every distractor and left the student one button to press.
+      final normalizedChoice = _normalizeChoice(choice);
       final alreadyAdded = uniqueChoices.any(
-        (item) => _normalize(item) == normalizedChoice,
+        (item) => _normalizeChoice(item) == normalizedChoice,
       );
       if (!alreadyAdded) uniqueChoices.add(choice);
     }
@@ -191,9 +195,33 @@ class SubjectQuestionBank {
         (subject, questions) =>
             MapEntry(subject, List<LeveledQuizQuestion>.unmodifiable(questions)),
       ));
+    _poolCache.clear();
   }
 
-  static void clearCustomQuestions() => _customQuestions.clear();
+  static void clearCustomQuestions() {
+    _customQuestions.clear();
+    _poolCache.clear();
+  }
+
+  /// Resolved pools, keyed by subject and by the topic filter applied to it.
+  ///
+  /// Building a pool means normalizing the topic of every one of the ~5,800
+  /// bundled questions, and [randomQuestion] is called once per question the
+  /// player sees. Doing that work on every draw was the most expensive thing
+  /// in the game loop, so the result is cached here and thrown away only when
+  /// the custom question pool actually changes - the two methods above are
+  /// its only mutation points.
+  static final Map<String, _ResolvedPool> _poolCache = <String, _ResolvedPool>{};
+
+  /// The questions compiled into the app for [type], without any of the
+  /// admin-authored ones pooled in.
+  ///
+  /// The admin question list shows these alongside the Firestore records so a
+  /// teacher can see the whole bank, not just the part they wrote themselves.
+  /// They are const literals in the binary, so they are read-only.
+  static List<LeveledQuizQuestion> bundledQuestionsFor(SubjectQuizType type) {
+    return _questions[type]!;
+  }
 
   /// How many admin-authored questions are currently live for [type].
   static int customQuestionCountFor(SubjectQuizType type) =>
@@ -215,7 +243,7 @@ class SubjectQuestionBank {
     SubjectQuizType type, {
     Set<String>? topics,
   }) {
-    return _filteredQuestions(type, topics: topics).length;
+    return _resolvePool(type, topics).questions.length;
   }
 
   /// Every distinct topic available for [type], bundled and admin-authored,
@@ -228,7 +256,7 @@ class SubjectQuestionBank {
     // Keyed by the normalized form so "Plural Nouns" and "plural  nouns"
     // collapse to one entry, while the original casing is what gets shown.
     final byNormalized = <String, String>{};
-    for (final item in _poolFor(type)) {
+    for (final item in _resolvePool(type, null).questions) {
       final topic = item.question.topic.trim();
       if (topic.isEmpty) continue;
       byNormalized.putIfAbsent(_normalize(topic), () => topic);
@@ -256,41 +284,125 @@ class SubjectQuestionBank {
     Set<String>? topics,
     Set<String>? excludeKeys,
   }) {
-    final filteredQuestions = _filteredQuestions(subject, topics: topics);
-    final allQuestions =
-        filteredQuestions.isEmpty ? _poolFor(subject) : filteredQuestions;
-    final eligibleQuestions = allQuestions
-        .where((item) => item.minLevel <= level)
-        .toList(growable: false);
-    final pool = eligibleQuestions.isEmpty ? allQuestions : eligibleQuestions;
-
-    var candidates = pool;
-    if (excludeKeys != null && excludeKeys.isNotEmpty) {
-      final unseen = pool
-          .where((item) => !excludeKeys.contains(questionKey(item.question)))
-          .toList(growable: false);
-      if (unseen.isNotEmpty) candidates = unseen;
+    var pool = _resolvePool(subject, topics);
+    // A topic filter that matches nothing falls back to the whole subject, so
+    // a lesson whose topics were all renamed still plays.
+    if (pool.questions.isEmpty) pool = _resolvePool(subject, null);
+    if (pool.questions.isEmpty) {
+      throw StateError('No questions available for ${subject.name}.');
     }
 
-    return candidates[random.nextInt(candidates.length)].question.shuffled(random);
+    // The pool is sorted by minLevel, so everything the player has unlocked
+    // sits at the front and the cutoff is one binary search rather than a
+    // scan and a copy of the whole list.
+    var end = pool.eligibleCount(level);
+    if (end == 0) end = pool.questions.length;
+
+    if (excludeKeys != null && excludeKeys.isNotEmpty) {
+      final unseen = pool.sampleUnseen(random, end, excludeKeys);
+      if (unseen != null) return unseen.question.shuffled(random);
+      // Every eligible question has already been asked, so repeats become
+      // possible again rather than the game running out of things to serve.
+    }
+
+    return pool.questions[random.nextInt(end)].question.shuffled(random);
   }
 
-  static List<LeveledQuizQuestion> _filteredQuestions(
-    SubjectQuizType subject, {
+  /// Bundled + custom questions for [subject], narrowed to [topics], sorted by
+  /// minLevel, with every question key precomputed. Cached; see [_poolCache].
+  static _ResolvedPool _resolvePool(
+    SubjectQuizType subject,
     Set<String>? topics,
-  }) {
-    final allQuestions = _poolFor(subject);
-    if (topics == null || topics.isEmpty) return allQuestions;
+  ) {
+    final normalizedTopics = (topics == null || topics.isEmpty)
+        ? const <String>[]
+        : (topics.map(_normalize).toSet().toList()..sort());
+    final cacheKey = '${subject.name}|${normalizedTopics.join(',')}';
 
-    final normalizedTopics = topics.map(_normalize).toSet();
-    final filtered = allQuestions
-        .where((item) =>
-            normalizedTopics.contains(_normalize(item.question.topic)))
-        .toList(growable: false);
-    return filtered;
+    final cached = _poolCache[cacheKey];
+    if (cached != null) return cached;
+
+    var questions = _poolFor(subject);
+    if (normalizedTopics.isNotEmpty) {
+      final wanted = normalizedTopics.toSet();
+      questions = questions
+          .where((item) => wanted.contains(_normalize(item.question.topic)))
+          .toList(growable: false);
+    }
+
+    final sorted = List<LeveledQuizQuestion>.of(questions)
+      ..sort((a, b) => a.minLevel.compareTo(b.minLevel));
+    final resolved = _ResolvedPool(
+      questions: List<LeveledQuizQuestion>.unmodifiable(sorted),
+      keys: List<String>.unmodifiable(
+        sorted.map((item) => questionKey(item.question)),
+      ),
+    );
+
+    _poolCache[cacheKey] = resolved;
+    return resolved;
   }
 }
 
+/// A ready-to-draw-from question pool: sorted by minLevel, with each
+/// question's [SubjectQuestionBank.questionKey] worked out once up front
+/// instead of rebuilt for every candidate on every draw.
+class _ResolvedPool {
+  final List<LeveledQuizQuestion> questions;
+
+  /// Parallel to [questions] - `keys[i]` is the key of `questions[i]`.
+  final List<String> keys;
+
+  const _ResolvedPool({required this.questions, required this.keys});
+
+  /// How many leading questions are unlocked at [level]. The list is sorted by
+  /// minLevel, so this is an upper-bound index found by binary search.
+  int eligibleCount(int level) {
+    var low = 0;
+    var high = questions.length;
+    while (low < high) {
+      final mid = (low + high) ~/ 2;
+      if (questions[mid].minLevel <= level) {
+        low = mid + 1;
+      } else {
+        high = mid;
+      }
+    }
+    return low;
+  }
+
+  /// A uniformly random question from `questions[0..end)` whose key is not in
+  /// [excludeKeys], or null once every eligible question has been asked.
+  ///
+  /// Reservoir sampling: one pass, no intermediate list, and every unseen
+  /// question is equally likely.
+  LeveledQuizQuestion? sampleUnseen(
+    Random random,
+    int end,
+    Set<String> excludeKeys,
+  ) {
+    LeveledQuizQuestion? chosen;
+    var unseenSoFar = 0;
+    for (var i = 0; i < end; i++) {
+      if (excludeKeys.contains(keys[i])) continue;
+      unseenSoFar++;
+      if (random.nextInt(unseenSoFar) == 0) chosen = questions[i];
+    }
+    return chosen;
+  }
+}
+
+/// Compiled once. Building the RegExp inside [_normalize] meant recompiling
+/// it for every question in the bank on every single lookup.
+final RegExp _whitespaceRun = RegExp(r'\s+');
+
 String _normalize(String value) {
-  return value.toLowerCase().replaceAll(RegExp(r'\s+'), ' ').trim();
+  return value.toLowerCase().replaceAll(_whitespaceRun, ' ').trim();
+}
+
+/// Like [_normalize] but keeps case, for comparing answer choices. Two choices
+/// count as the same only when they are the same text, not merely the same
+/// letters - see [SubjectQuizQuestion.shuffled].
+String _normalizeChoice(String value) {
+  return value.replaceAll(_whitespaceRun, ' ').trim();
 }

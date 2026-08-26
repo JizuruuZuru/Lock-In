@@ -369,19 +369,13 @@ class _RomanNumeralsGameState extends State<RomanNumeralsGame> {
         gameName: gameName,
         score: score,
         difficulty: gameDifficultyModeLabel(_selectedMode),
+        extraHighscoreFields: {'roman_numerals_highscore': score},
       );
-
-      final snapshot = await userRef.get();
-      final previousHighscore = snapshot.data()?['roman_numerals_highscore'];
-      final currentHighscore = previousHighscore is num
-          ? previousHighscore.toInt()
-          : 0;
 
       await userRef.set({
         'roman_numerals_last_score': score,
         'roman_numerals_last_level': level,
         'roman_numerals_last_played': FieldValue.serverTimestamp(),
-        if (score > currentHighscore) 'roman_numerals_highscore': score,
       }, SetOptions(merge: true));
 
       if (score > 0) {

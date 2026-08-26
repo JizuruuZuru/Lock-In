@@ -259,73 +259,52 @@ class _QuestionEditorPageState extends State<QuestionEditorPage> {
             },
           ),
           const SizedBox(height: 14),
-          // RawAutocomplete (rather than Autocomplete) so the field can share
-          // _topicController instead of owning a second controller that would
-          // have to be mirrored back on every keystroke.
-          RawAutocomplete<String>(
-            textEditingController: _topicController,
+          // A read-only field that opens a centred picker. The old inline
+          // dropdown floated over the cards below it and showed at most 12 of
+          // the topics, with no way to reach the rest.
+          TextField(
+            controller: _topicController,
             focusNode: _topicFocus,
-            optionsBuilder: (value) {
-              final needle = value.text.trim().toLowerCase();
-              if (needle.isEmpty) return topics.take(12);
-              return topics
-                  .where((topic) => topic.toLowerCase().contains(needle))
-                  .take(12);
-            },
-            onSelected: (_) => _revalidateIfNeeded(),
-            fieldViewBuilder: (context, controller, focusNode, onSubmitted) {
-              return TextField(
-                controller: controller,
-                focusNode: focusNode,
-                onChanged: (_) => _revalidateIfNeeded(),
-                onSubmitted: (_) => onSubmitted(),
-                decoration: InputDecoration(
-                  labelText: 'Topic',
-                  hintText: 'e.g. Nouns, Plants, Weather',
-                  prefixIcon: const Icon(Icons.label_rounded),
-                  helperText: 'Start typing to see topics already in use',
-                  errorText: _errors['topic'],
-                ),
-              );
-            },
-            optionsViewBuilder: (context, onSelected, options) {
-              return Align(
-                alignment: Alignment.topLeft,
-                child: Material(
-                  elevation: 0,
-                  color: AdminPalette.panel,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    side: const BorderSide(color: AdminPalette.ink, width: 2),
-                  ),
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxHeight: 240, maxWidth: 420),
-                    child: ListView(
-                      padding: EdgeInsets.zero,
-                      shrinkWrap: true,
-                      children: [
-                        for (final option in options)
-                          ListTile(
-                            dense: true,
-                            title: Text(
-                              option,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w700,
-                                fontSize: 13.5,
-                              ),
-                            ),
-                            onTap: () => onSelected(option),
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
-              );
-            },
+            readOnly: true,
+            onTap: _openTopicPicker,
+            decoration: InputDecoration(
+              labelText: 'Topic',
+              hintText: 'Tap to choose a topic',
+              prefixIcon: const Icon(Icons.label_rounded),
+              suffixIcon: IconButton(
+                icon: const Icon(Icons.unfold_more_rounded),
+                tooltip: 'Browse topics',
+                onPressed: _openTopicPicker,
+              ),
+              helperText: topics.isEmpty
+                  ? 'Tap to name the first topic for this subject'
+                  : 'Tap to browse all ${topics.length} topics, or add a new one',
+              errorText: _errors['topic'],
+            ),
           ),
         ],
       ),
     );
+  }
+
+  /// Opens the topic picker over the middle of the screen.
+  ///
+  /// Every topic already in use for this subject is listed and searchable, and
+  /// a topic that does not exist yet can be added from the same sheet - filing
+  /// a question under an existing topic is what makes it join that lesson, so
+  /// seeing the real list matters more than free typing.
+  Future<void> _openTopicPicker() async {
+    final picked = await showDialog<String>(
+      context: context,
+      builder: (_) => _TopicPickerDialog(
+        topics: SubjectQuestionBank.topicsFor(_subject),
+        subjectLabel: subjectQuizTypeLabel(_subject),
+        initialTopic: _topicController.text.trim(),
+      ),
+    );
+    if (picked == null || !mounted) return;
+    _topicController.text = picked;
+    _revalidateIfNeeded();
   }
 
   Widget _questionPanel() {
@@ -355,7 +334,7 @@ class _QuestionEditorPageState extends State<QuestionEditorPage> {
             controller: _promptController,
             maxLines: 4,
             minLines: 2,
-            maxLength: 600,
+            maxLength: QuizQuestionRecord.maxPromptLength,
             textCapitalization: TextCapitalization.sentences,
             onChanged: (_) => _revalidateIfNeeded(),
             decoration: InputDecoration(
@@ -648,6 +627,197 @@ class _QuestionEditorPageState extends State<QuestionEditorPage> {
               ? 'Saving...'
               : (_isEditing ? 'Save changes' : 'Create question'),
           style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
+        ),
+      ),
+    );
+  }
+}
+
+/// The centred topic picker. Split out as its own stateful widget so the
+/// search box can filter without rebuilding the whole editor behind it.
+class _TopicPickerDialog extends StatefulWidget {
+  final List<String> topics;
+  final String subjectLabel;
+  final String initialTopic;
+
+  const _TopicPickerDialog({
+    required this.topics,
+    required this.subjectLabel,
+    required this.initialTopic,
+  });
+
+  @override
+  State<_TopicPickerDialog> createState() => _TopicPickerDialogState();
+}
+
+class _TopicPickerDialogState extends State<_TopicPickerDialog> {
+  final TextEditingController _search = TextEditingController();
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  String get _query => _search.text.trim();
+
+  List<String> get _visible {
+    final needle = _query.toLowerCase();
+    if (needle.isEmpty) return widget.topics;
+    return widget.topics
+        .where((topic) => topic.toLowerCase().contains(needle))
+        .toList(growable: false);
+  }
+
+  /// True when what was typed is not already a topic, so it can be added.
+  bool get _canCreate {
+    if (_query.isEmpty) return false;
+    final needle = _query.toLowerCase();
+    return !widget.topics.any((topic) => topic.toLowerCase() == needle);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final visible = _visible;
+
+    return Dialog(
+      insetPadding: const EdgeInsets.all(24),
+      backgroundColor: AdminPalette.panel,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: const BorderSide(color: AdminPalette.ink, width: 2),
+      ),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 460, maxHeight: 560),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(18, 18, 18, 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.label_rounded, color: AdminPalette.accent),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Choose a topic',
+                          style: TextStyle(
+                            fontSize: 19,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        Text(
+                          '${widget.topics.length} in use for '
+                          '${widget.subjectLabel}',
+                          style: const TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w600,
+                            color: AdminPalette.muted,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded),
+                    tooltip: 'Close',
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _search,
+                autofocus: true,
+                onChanged: (_) => setState(() {}),
+                decoration: InputDecoration(
+                  hintText: 'Search topics, or type a new one',
+                  prefixIcon: const Icon(Icons.search_rounded),
+                  suffixIcon: _query.isEmpty
+                      ? null
+                      : IconButton(
+                          icon: const Icon(Icons.clear_rounded),
+                          tooltip: 'Clear',
+                          onPressed: () {
+                            _search.clear();
+                            setState(() {});
+                          },
+                        ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Flexible(
+                child: visible.isEmpty
+                    ? Center(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 24),
+                          child: Text(
+                            widget.topics.isEmpty
+                                ? 'No topics yet for ${widget.subjectLabel}.\n'
+                                    'Type one above to create the first.'
+                                : 'No topic matches "$_query".',
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w600,
+                              color: AdminPalette.muted,
+                            ),
+                          ),
+                        ),
+                      )
+                    : Scrollbar(
+                        child: ListView.builder(
+                          shrinkWrap: true,
+                          itemCount: visible.length,
+                          itemBuilder: (context, index) {
+                            final topic = visible[index];
+                            final selected = topic == widget.initialTopic;
+                            return ListTile(
+                              dense: true,
+                              selected: selected,
+                              selectedTileColor:
+                                  AdminPalette.accent.withValues(alpha: 0.10),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              leading: Icon(
+                                selected
+                                    ? Icons.check_circle_rounded
+                                    : Icons.circle_outlined,
+                                size: 20,
+                                color: selected
+                                    ? AdminPalette.accent
+                                    : AdminPalette.muted,
+                              ),
+                              title: Text(
+                                topic,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              onTap: () => Navigator.of(context).pop(topic),
+                            );
+                          },
+                        ),
+                      ),
+              ),
+              if (_canCreate) ...[
+                const Divider(height: 20),
+                ElevatedButton.icon(
+                  onPressed: () => Navigator.of(context).pop(_query),
+                  icon: const Icon(Icons.add_rounded),
+                  label: Text(
+                    'Add new topic "$_query"',
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ],
+          ),
         ),
       ),
     );

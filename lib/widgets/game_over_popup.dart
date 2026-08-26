@@ -298,15 +298,15 @@ class _GameOverPopupState extends State<GameOverPopup>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
+              const Row(
                 children: [
-                  const Icon(
+                  Icon(
                     Icons.cancel,
                     color: Color(0xFFF44336),
                     size: 24,
                   ),
-                  const SizedBox(width: 8),
-                  const Text(
+                  SizedBox(width: 8),
+                  Text(
                     'Your Answer',
                     style: TextStyle(
                       fontSize: 16,
@@ -345,15 +345,15 @@ class _GameOverPopupState extends State<GameOverPopup>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
+              const Row(
                 children: [
-                  const Icon(
+                  Icon(
                     Icons.check_circle,
                     color: Color(0xFF4CAF50),
                     size: 24,
                   ),
-                  const SizedBox(width: 8),
-                  const Text(
+                  SizedBox(width: 8),
+                  Text(
                     'Correct Answer',
                     style: TextStyle(
                       fontSize: 16,

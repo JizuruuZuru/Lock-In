@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'utils/firebase_options.dart';
 import 'app_gate.dart';
 import 'services/sound_service.dart';
@@ -42,10 +41,10 @@ class _BrainTrainerAppState extends State<BrainTrainerApp> {
       theme: ThemeData(
         useMaterial3: true,
         colorSchemeSeed: Colors.blue,
-        fontFamily: GoogleFonts.notoSans().fontFamily,
-        textTheme: GoogleFonts.notoSansTextTheme(
-          Theme.of(context).textTheme,
-        ),
+        // Bundled, not downloaded - see the fonts section in pubspec.yaml.
+        // Setting the family on the theme is enough; every text style
+        // inherits it, so no separate textTheme override is needed.
+        fontFamily: 'NotoSans',
       ),
       home: const AppGate(),
     );

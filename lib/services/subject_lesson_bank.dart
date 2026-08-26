@@ -271,7 +271,10 @@ class SubjectLessonBank {
     return filtered.isEmpty ? pool : filtered;
   }
 
+  /// Compiled once rather than rebuilt on every call.
+  static final RegExp _whitespaceRun = RegExp(r'\s+');
+
   static String _normalizeTopic(String value) {
-    return value.toLowerCase().replaceAll(RegExp(r'\s+'), ' ').trim();
+    return value.toLowerCase().replaceAll(_whitespaceRun, ' ').trim();
   }
 }

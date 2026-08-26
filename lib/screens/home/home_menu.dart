@@ -41,7 +41,10 @@ import '../../models/app_user_record.dart';
 import '../../services/app_settings_service.dart';
 import '../../services/connectivity_service.dart';
 import '../../services/google_link_service.dart';
+import '../../services/leaderboard_service.dart';
 import '../../services/sound_service.dart';
+import '../../services/text_to_speech_service.dart';
+import '../../services/tts_voice.dart';
 import '../../utils/responsive_layout.dart';
 import '../../widgets/app_brightness_overlay.dart';
 import '../../widgets/animated_shape_background.dart';
@@ -132,6 +135,19 @@ class _HomeMenuState extends State<HomeMenu> {
   Set<ExamSubjectSelection>? _selectedExamSubject;
   bool _isOffline = false;
 
+  /// Held so it can be cancelled in dispose. Without this the callback keeps
+  /// firing after the screen is gone - calling setState on a dead State the
+  /// moment the player signs out.
+  StreamSubscription<User?>? _authSubscription;
+
+  /// The profile history query, cached with the value it was built from.
+  /// Unlike the admin lists this stream is not constant: clearing history
+  /// adds a `timestamp >` bound. Rebuilding it inline on every frame would
+  /// reopen the listener constantly, so it is rebuilt only when that bound
+  /// actually changes.
+  Stream<QuerySnapshot<Map<String, dynamic>>>? _historyStream;
+  String? _historyStreamKey;
+
   /// True while Google's account chooser is open, so the button cannot be
   /// tapped twice.
   bool _isLinkingGoogle = false;
@@ -141,13 +157,23 @@ class _HomeMenuState extends State<HomeMenu> {
     super.initState();
     SoundService().playPageBgm(BgmPage.home);
     SoundService().registerUserInteraction();
-    _auth.authStateChanges().listen((u) {
+    _authSubscription = _auth.authStateChanges().listen((u) {
+      if (!mounted) return;
       setState(() {
         user = u;
+        // Force the history query to be rebuilt for whoever signed in.
+        _historyStream = null;
+        _historyStreamKey = null;
       });
       fetchUserData();
     });
     _checkOfflineOnOpen();
+  }
+
+  @override
+  void dispose() {
+    _authSubscription?.cancel();
+    super.dispose();
   }
 
   Future<void> _checkOfflineOnOpen() async {
@@ -186,15 +212,48 @@ class _HomeMenuState extends State<HomeMenu> {
             .collection('users')
             .doc(user!.uid)
             .get();
+        if (!mounted) return;
         if (doc.exists) {
-          setState(() => userData = doc.data());
+          setState(() {
+            userData = doc.data();
+            // history_cleared_at may have changed with the new data.
+            _historyStream = null;
+            _historyStreamKey = null;
+          });
         }
       } catch (error) {
         debugPrint('fetchUserData failed (likely offline): $error');
       }
     } else {
+      if (!mounted) return;
       setState(() => userData = null);
     }
+  }
+
+  /// The player's game history, rebuilt only when the signed-in account or
+  /// the "history cleared" bound changes. Returning a new stream on every
+  /// build would drop and reopen the Firestore listener each frame, flashing
+  /// the list back to its spinner.
+  Stream<QuerySnapshot<Map<String, dynamic>>> _gameHistoryStream(String uid) {
+    final clearedAt = userData?['history_cleared_at'];
+    final key = '$uid|${clearedAt is Timestamp ? clearedAt.toString() : ''}';
+
+    final cached = _historyStream;
+    if (cached != null && _historyStreamKey == key) return cached;
+
+    Query<Map<String, dynamic>> query = FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .collection('game_logs');
+    if (clearedAt is Timestamp) {
+      query = query.where('timestamp', isGreaterThan: clearedAt);
+    }
+
+    final stream =
+        query.orderBy('timestamp', descending: true).snapshots();
+    _historyStream = stream;
+    _historyStreamKey = key;
+    return stream;
   }
 
   Future<void> _showSettingsSheet() async {
@@ -303,6 +362,8 @@ class _HomeMenuState extends State<HomeMenu> {
                         appSettings.setBrightness(value);
                       },
                     ),
+                    const Divider(height: 26),
+                    const _ReadingVoiceSection(),
                   ],
                 ),
               ),
@@ -777,12 +838,12 @@ class _HomeMenuState extends State<HomeMenu> {
             ),
           ),
           bottomNavigationBar: Container(
-            decoration: BoxDecoration(
+            decoration: const BoxDecoration(
               color: _panelColor,
               border: Border(
                 top: BorderSide(color: _inkColor, width: 2.2),
               ),
-              boxShadow: const [
+              boxShadow: [
                 BoxShadow(
                   color: Color(0x332C3550),
                   offset: Offset(0, -3),
@@ -1319,9 +1380,7 @@ class _HomeMenuState extends State<HomeMenu> {
                   if (_homeMode != _HomeMode.chooser) ...[
                     InkWell(
                       borderRadius: BorderRadius.circular(14),
-                      onTap: () {
-                        _handleHomeHeaderBack();
-                      },
+                      onTap: _handleHomeHeaderBack,
                       child: Container(
                         padding: EdgeInsets.all(desktop ? 6 : 8),
                         decoration: BoxDecoration(
@@ -1366,7 +1425,7 @@ class _HomeMenuState extends State<HomeMenu> {
       builder: (context, constraints) {
         final width = constraints.maxWidth;
         final desktop = isDesktopLayout(width);
-        final contentWidth = double.infinity;
+        const contentWidth = double.infinity;
 
         final lessonCard = _buildGifChoiceCard(
           title: 'Lesson',
@@ -1397,7 +1456,7 @@ class _HomeMenuState extends State<HomeMenu> {
 
         return Center(
           child: ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: contentWidth),
+            constraints: const BoxConstraints(maxWidth: contentWidth),
             child: desktop
                 ? Row(
                     key: const ValueKey('home-choice'),
@@ -1764,7 +1823,7 @@ class _HomeMenuState extends State<HomeMenu> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final desktop = isDesktopLayout(constraints.maxWidth);
-        final contentWidth = double.infinity;
+        const contentWidth = double.infinity;
 
         final cards = [
           _buildExamGifCard(
@@ -1789,7 +1848,7 @@ class _HomeMenuState extends State<HomeMenu> {
 
         return Center(
           child: ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: contentWidth),
+            constraints: const BoxConstraints(maxWidth: contentWidth),
             child: desktop
                 ? Row(
                     key: ValueKey('exam-view-${examSubjectSetTitle(selectedSubject)}'),
@@ -2067,23 +2126,7 @@ class _HomeMenuState extends State<HomeMenu> {
             Expanded(
               child: user != null
                   ? StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                      stream: () {
-                        Query<Map<String, dynamic>> query = FirebaseFirestore
-                            .instance
-                            .collection('users')
-                            .doc(user!.uid)
-                            .collection('game_logs');
-                        final clearedAt = userData?['history_cleared_at'];
-                        if (clearedAt is Timestamp) {
-                          query = query.where(
-                            'timestamp',
-                            isGreaterThan: clearedAt,
-                          );
-                        }
-                        return query
-                            .orderBy('timestamp', descending: true)
-                            .snapshots();
-                      }(),
+                      stream: _gameHistoryStream(user!.uid),
                       builder: (context, snapshot) {
                         if (snapshot.connectionState ==
                             ConnectionState.waiting) {
@@ -2496,6 +2539,7 @@ class _HomeMenuState extends State<HomeMenu> {
                               if (!context.mounted) return;
 
                               if (shouldSignOut == true) {
+                                resetPlayerNameCache();
                                 await _auth.signOut();
                                 if (!mounted) return;
                                 // Back to the start screen, which asks again
@@ -2776,6 +2820,106 @@ class _SignOutConfirmationDialogState
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Shows which voice the spelling game reads with, and - when the device has
+/// only a basic one - how to get a better one.
+///
+/// The app cannot install voice data itself; that lives behind the system
+/// text-to-speech settings. What it can do is notice that the installed voice
+/// is a poor one, or that a better one is listed but not yet downloaded, and
+/// say so instead of just sounding robotic for no visible reason.
+class _ReadingVoiceSection extends StatefulWidget {
+  const _ReadingVoiceSection();
+
+  @override
+  State<_ReadingVoiceSection> createState() => _ReadingVoiceSectionState();
+}
+
+class _ReadingVoiceSectionState extends State<_ReadingVoiceSection> {
+  VoiceReport? _report;
+  bool _busy = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load({bool recheck = false}) async {
+    setState(() => _busy = true);
+    final report = recheck
+        ? await TextToSpeechService().refreshVoice()
+        : await TextToSpeechService().ensureReady();
+    if (!mounted) return;
+    setState(() {
+      _report = report;
+      _busy = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final report = _report;
+    final advice = report?.advice;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Reading voice',
+          style: TextStyle(fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          _busy ? 'Checking...' : (report?.summary ?? 'Not available'),
+          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+        ),
+        if (advice != null) ...[
+          const SizedBox(height: 8),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(11),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF4DC),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFE0A800), width: 1.4),
+            ),
+            child: Text(
+              advice,
+              style: const TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+                height: 1.35,
+                color: Color(0xFF7A5600),
+              ),
+            ),
+          ),
+        ],
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            TextButton.icon(
+              onPressed: _busy
+                  ? null
+                  : () => TextToSpeechService().speakSpellingWord(
+                        'spelling',
+                        sentence: 'This is how the reading voice sounds.',
+                      ),
+              icon: const Icon(Icons.volume_up_rounded, size: 18),
+              label: const Text('Hear it'),
+            ),
+            const SizedBox(width: 4),
+            TextButton.icon(
+              onPressed: _busy ? null : () => _load(recheck: true),
+              icon: const Icon(Icons.refresh_rounded, size: 18),
+              label: const Text('Check again'),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }

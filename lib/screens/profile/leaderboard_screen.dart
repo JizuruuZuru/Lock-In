@@ -18,6 +18,15 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
 
   String? _selectedGame; // null = all games
 
+  /// Held in state so selecting a game from the dropdown does not tear down
+  /// and reopen the Firestore listener. The dropdown filters the delivered
+  /// rows client-side, so the query itself never changes.
+  late final Stream<QuerySnapshot> _entriesStream = FirebaseFirestore.instance
+      .collection('leaderboard_entries')
+      .orderBy('score', descending: true)
+      .limit(50)
+      .snapshots();
+
   @override
   Widget build(BuildContext context) {
     return Theme(
@@ -38,11 +47,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: StreamBuilder<QuerySnapshot>(
-                stream: FirebaseFirestore.instance
-                    .collection('leaderboard_entries')
-                    .orderBy('score', descending: true)
-                    .limit(50)
-                    .snapshots(),
+                stream: _entriesStream,
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
                     return const Center(child: CircularProgressIndicator());
@@ -160,7 +165,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                               fontSize: 16,
                             ),
                             dropdownColor: _panelColor,
-                            icon: Icon(Icons.arrow_drop_down, color: _inkColor, size: 28),
+                            icon: const Icon(Icons.arrow_drop_down, color: _inkColor, size: 28),
                             iconSize: 28,
                           ),
                         ),

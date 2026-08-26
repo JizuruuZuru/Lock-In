@@ -164,6 +164,9 @@ class _GameSecurityOverlayState extends State<GameSecurityOverlay>
   Future<void> _showProctorRequiredOverlay(String message) async {
     if (!mounted || _isOverlayVisible || _isHandlingAttempt) return;
     await _stopFaceProctor();
+    // Re-checked: the camera teardown above is awaited, so the overlay can be
+    // disposed between the check at the top and here.
+    if (!mounted) return;
     widget.onLockChanged?.call(true);
     setState(() {
       _title = 'Camera required';
@@ -276,6 +279,8 @@ class _GameSecurityOverlayState extends State<GameSecurityOverlay>
     if (_isHandlingAttempt) return;
     SoundService().playButtonSoundNow();
     await _stopFaceProctor();
+    // Nothing left to unlock or navigate if the game screen is already gone.
+    if (!mounted) return;
     setState(() {
       _isOverlayVisible = false;
       _didLeaveApp = false;

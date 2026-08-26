@@ -127,12 +127,12 @@ class _NumberMemoryGameState extends State<NumberMemoryGame>
 
     setState(() {});
 
-    final revealDelaySeconds = displayTime >= minRevealToInputDelay
+    const revealDelaySeconds = displayTime >= minRevealToInputDelay
         ? displayTime
         : minRevealToInputDelay;
 
     // Use Timer instead of Future.delayed so we can cancel it
-    _displayTimer = Timer(Duration(seconds: revealDelaySeconds), () {
+    _displayTimer = Timer(const Duration(seconds: revealDelaySeconds), () {
       if (!mounted) return;
       setState(() {
         showNumber = false;
@@ -279,6 +279,13 @@ class _NumberMemoryGameState extends State<NumberMemoryGame>
     }
 
     await _stopFaceProctor();
+
+    // Stopping the proctor tears down the camera and the ML Kit detector,
+    // which is slow enough that the player can leave the screen first.
+    if (!mounted) {
+      _processingLeaveAttempt = false;
+      return;
+    }
 
     setState(() {
       isGameOver = true;
@@ -919,11 +926,11 @@ class _NumberMemoryGameState extends State<NumberMemoryGame>
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Align(
+                    const Align(
                       alignment: Alignment.centerRight,
                       child: IconButton(
                         onPressed: null,
-                        icon: const Icon(Icons.record_voice_over_rounded),
+                        icon: Icon(Icons.record_voice_over_rounded),
                         tooltip: 'Replay number voice',
                       ),
                     ),
@@ -982,9 +989,9 @@ class _NumberMemoryGameState extends State<NumberMemoryGame>
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 _card(
-                  child: Row(
+                  child: const Row(
                     children: [
-                      const Expanded(
+                      Expanded(
                         child: Text(
                           "Enter the number you saw",
                           style: TextStyle(
@@ -996,7 +1003,7 @@ class _NumberMemoryGameState extends State<NumberMemoryGame>
                       ),
                       IconButton(
                         onPressed: null,
-                        icon: const Icon(Icons.volume_up_rounded),
+                        icon: Icon(Icons.volume_up_rounded),
                         tooltip: 'Replay prompt',
                       ),
                     ],
