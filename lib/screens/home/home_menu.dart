@@ -40,6 +40,7 @@ import '../../app_gate.dart';
 import '../../models/app_user_record.dart';
 import '../../services/app_settings_service.dart';
 import '../../services/connectivity_service.dart';
+import '../../services/custom_question_sync.dart';
 import '../../services/google_link_service.dart';
 import '../../services/leaderboard_service.dart';
 import '../../services/sound_service.dart';
@@ -48,6 +49,7 @@ import '../../services/tts_voice.dart';
 import '../../utils/responsive_layout.dart';
 import '../../widgets/app_brightness_overlay.dart';
 import '../../widgets/animated_shape_background.dart';
+import '../../widgets/decorative_gif.dart';
 
 class _HomeGameItem {
   final String name;
@@ -234,6 +236,9 @@ class _HomeMenuState extends State<HomeMenu> {
   /// the "history cleared" bound changes. Returning a new stream on every
   /// build would drop and reopen the Firestore listener each frame, flashing
   /// the list back to its spinner.
+  /// How many finished games the History tab keeps live.
+  static const int _historyLimit = 200;
+
   Stream<QuerySnapshot<Map<String, dynamic>>> _gameHistoryStream(String uid) {
     final clearedAt = userData?['history_cleared_at'];
     final key = '$uid|${clearedAt is Timestamp ? clearedAt.toString() : ''}';
@@ -249,8 +254,14 @@ class _HomeMenuState extends State<HomeMenu> {
       query = query.where('timestamp', isGreaterThan: clearedAt);
     }
 
-    final stream =
-        query.orderBy('timestamp', descending: true).snapshots();
+    // Capped. This is a live listener over a player's whole history, and an
+    // account with hundreds of finished games streamed - and re-streamed on
+    // every change - every one of them. The History tab only ever shows recent
+    // runs and per-game bests, both of which this covers comfortably.
+    final stream = query
+        .orderBy('timestamp', descending: true)
+        .limit(_historyLimit)
+        .snapshots();
     _historyStream = stream;
     _historyStreamKey = key;
     return stream;
@@ -775,11 +786,16 @@ class _HomeMenuState extends State<HomeMenu> {
 
   @override
   Widget build(BuildContext context) {
-    final pages = [
-      _buildHome(),
-      _buildHistories(),
-      _buildSettings(),
-    ];
+    // Built on demand. As a list literal all three tabs were constructed on
+    // every rebuild - and this page rebuilds on every nav tap, auth event,
+    // profile fetch, and mode selection - so the History tab's StreamBuilder
+    // and ExpansionTile tree and the Settings profile card were assembled in
+    // full even while the Play tab was showing.
+    final Widget page = switch (_currentIndex) {
+      0 => _buildHome(),
+      1 => _buildHistories(),
+      _ => _buildSettings(),
+    };
 
     return Theme(
       data: _buildTheme(context),
@@ -833,7 +849,7 @@ class _HomeMenuState extends State<HomeMenu> {
               },
               child: KeyedSubtree(
                 key: ValueKey(_currentIndex),
-                child: pages[_currentIndex],
+                child: page,
               ),
             ),
           ),
@@ -1550,10 +1566,14 @@ class _HomeMenuState extends State<HomeMenu> {
                 ),
                 SizedBox(height: desktop ? 8 : 12),
                 (desktop
-                    ? Expanded(child: _gifBox(gifPath, _accentColor))
+                    ? Expanded(
+                        child: _gifBox(gifPath, _accentColor,
+                            displayWidth: width),
+                      )
                     : SizedBox(
                         height: gifHeight.toDouble(),
-                        child: _gifBox(gifPath, _accentColor),
+                        child: _gifBox(gifPath, _accentColor,
+                            displayWidth: width),
                       )),
               ],
             );
@@ -1563,7 +1583,7 @@ class _HomeMenuState extends State<HomeMenu> {
     );
   }
 
-  Widget _gifBox(String gifPath, Color color) {
+  Widget _gifBox(String gifPath, Color color, {double? displayWidth}) {
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
@@ -1575,10 +1595,9 @@ class _HomeMenuState extends State<HomeMenu> {
         ),
       ),
       clipBehavior: Clip.antiAlias,
-      child: Image.asset(
-        gifPath,
-        fit: BoxFit.cover,
-        gaplessPlayback: true,
+      child: DecorativeGif(
+        assetPath: gifPath,
+        displayWidth: displayWidth,
       ),
     );
   }
@@ -2024,10 +2043,9 @@ class _HomeMenuState extends State<HomeMenu> {
                             ),
                           ),
                           clipBehavior: Clip.antiAlias,
-                          child: Image.asset(
-                            gifPath,
-                            fit: BoxFit.cover,
-                            gaplessPlayback: true,
+                          child: DecorativeGif(
+                            assetPath: gifPath,
+                            displayWidth: constraints.maxWidth,
                           ),
                         ),
                       )
@@ -2043,10 +2061,9 @@ class _HomeMenuState extends State<HomeMenu> {
                           ),
                         ),
                         clipBehavior: Clip.antiAlias,
-                        child: Image.asset(
-                          gifPath,
-                          fit: BoxFit.cover,
-                          gaplessPlayback: true,
+                        child: DecorativeGif(
+                          assetPath: gifPath,
+                          displayWidth: constraints.maxWidth,
                         ),
                       )),
                 SizedBox(height: desktop ? 8 : 12),
@@ -2086,11 +2103,23 @@ class _HomeMenuState extends State<HomeMenu> {
     );
   }
 
+  /// Accepts a Firestore `Timestamp`, an ISO-8601 string, or null, and never
+  /// throws - a malformed value simply reads as "no date".
+  static DateTime? _asDateTime(Object? value) {
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    if (value is String) return DateTime.tryParse(value);
+    return null;
+  }
+
   Widget _buildHistories() {
     final displayName = userData?['username'] ?? 'Guest User';
-    final joinedTime = userData?['joinedAt'] != null
-        ? DateTime.parse(userData!['joinedAt'])
-        : null;
+    // Nothing in the app writes `joinedAt`, so this has always rendered "-".
+    // It also ran an unguarded `DateTime.parse` inside `build()`: a legacy or
+    // admin-written document holding a Timestamp (or any unparseable string)
+    // threw straight out of build and red-screened the History tab. Read the
+    // account creation time instead, and accept either shape.
+    final joinedTime = _asDateTime(userData?['joinedAt'] ?? userData?['createdAt']);
     final joinedAgo = joinedTime != null
         ? '${DateTime.now().difference(joinedTime).inDays} days ago'
         : '—';
@@ -2540,6 +2569,7 @@ class _HomeMenuState extends State<HomeMenu> {
 
                               if (shouldSignOut == true) {
                                 resetPlayerNameCache();
+                                await CustomQuestionSync.instance.stop();
                                 await _auth.signOut();
                                 if (!mounted) return;
                                 // Back to the start screen, which asks again

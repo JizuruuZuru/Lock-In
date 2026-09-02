@@ -1,13 +1,13 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import '../../services/game_result_recorder.dart';
 import '../../services/game_logger.dart';
 import '../../services/face_proctor_contract.dart';
 import '../../services/face_proctor_service.dart';
 import '../../services/leave_attempt_logger.dart';
 import '../../services/sound_service.dart';
-import '../../services/leaderboard_service.dart';
+import '../../utils/game_theme.dart';
 import '../../utils/game_difficulty_mode.dart';
 import '../../utils/responsive_layout.dart';
 import '../../widgets/animated_shape_background.dart';
@@ -65,7 +65,9 @@ class _NumberMemoryGameState extends State<NumberMemoryGame>
   bool _isProctorActive = false;
 
   // 🔥 duplicate prevention
-  bool _isSavingScore = false;
+  final GameSaveGate _saveGate = GameSaveGate();
+
+  static const String _gameName = 'Number Memory';
   
   // Timer for auto-transition from display to input
   Timer? _displayTimer;
@@ -81,7 +83,7 @@ class _NumberMemoryGameState extends State<NumberMemoryGame>
   @override
   void dispose() {
     _displayTimer?.cancel(); // Cancel any pending timer
-    GameLogger.endSession(); // Clean up session
+    GameLogger.endSession(_gameName);
     WidgetsBinding.instance.removeObserver(this);
     unawaited(_stopFaceProctor());
     SoundService().playPageBgm(BgmPage.home);
@@ -98,20 +100,40 @@ class _NumberMemoryGameState extends State<NumberMemoryGame>
   Future<bool> _startFaceProctor() async {
     if (_isProctorActive) return true;
 
-    final status = await _faceProctor.start(
-      absenceThreshold: const Duration(seconds: 3),
-      onViolation: (event) {
-        _handleFaceViolation(
-          gameName: 'Number Memory',
-          event: event,
-        );
-      },
-    );
+    // Claimed before the await. `start()` takes hundreds of milliseconds on
+    // mobile, and `dispose()` during that window used to find this flag still
+    // false, so `_stopFaceProctor()` no-opped and the camera and ML Kit
+    // detector stayed live after the screen was gone. Setting it here also
+    // stops two concurrent starts building two CameraControllers.
+    _isProctorActive = true;
+
+    final FaceProctorStartStatus status;
+    try {
+      status = await _faceProctor.start(
+        absenceThreshold: const Duration(seconds: 3),
+        onViolation: (event) {
+          _handleFaceViolation(
+            gameName: _gameName,
+            event: event,
+          );
+        },
+      );
+    } catch (_) {
+      _isProctorActive = false;
+      rethrow;
+    }
 
     if (status == FaceProctorStartStatus.started) {
-      _isProctorActive = true;
+      if (!mounted) {
+        // Unmounted mid-start; nothing else will release the camera.
+        await _faceProctor.stop();
+        _isProctorActive = false;
+        return false;
+      }
       return true;
     }
+
+    _isProctorActive = false;
     return false;
   }
 
@@ -171,7 +193,6 @@ class _NumberMemoryGameState extends State<NumberMemoryGame>
       _showExitConfirmation = false;
       _suspendLeaveDetector = false;
       _leaveAttemptsThisRun = 0;
-      _isSavingScore = false; // reset flag
     });
     startLevel();
     _isProctorActive = true;
@@ -182,7 +203,7 @@ class _NumberMemoryGameState extends State<NumberMemoryGame>
       absenceThreshold: const Duration(seconds: 3),
       onViolation: (event) {
         _handleFaceViolation(
-          gameName: 'Number Memory',
+          gameName: _gameName,
           event: event,
         );
       },
@@ -299,7 +320,7 @@ class _NumberMemoryGameState extends State<NumberMemoryGame>
 
     try {
       await LeaveAttemptLogger.logAttempt(
-        gameName: 'Number Memory',
+        gameName: _gameName,
         reason: 'app_backgrounded_or_home_pressed',
       );
       await saveScore();
@@ -557,32 +578,36 @@ class _NumberMemoryGameState extends State<NumberMemoryGame>
 
   // 🔧 UPDATED saveScore with duplicate prevention
   Future<void> saveScore() async {
-    if (_isSavingScore) return;
-    _isSavingScore = true;
-    try {
-      await GameLogger.logGame(
-        gameName: 'Number Memory',
+    // This game scores by how many digits were recalled, which is `level`.
+    await _saveGate.run(() async {
+      await saveGameResult(
+        gameName: _gameName,
         score: level,
+        level: level,
         difficulty: gameDifficultyModeLabel(_selectedMode),
+        storageKey: 'number_memory',
       );
-
-      final user = FirebaseAuth.instance.currentUser;
-      if (user != null) {
-        await updateLeaderboardEntry(
-          gameName: 'Number Memory',
-          newScore: level,
-          difficulty: gameDifficultyModeLabel(_selectedMode),
-        );
-      }
-    } catch (e) {
-      debugPrint('Error in saveScore (Number Memory): $e');
-    } finally {
-      _isSavingScore = false;
-    }
+    });
   }
 
   @override
   Widget build(BuildContext context) {
+    // The screen drives every exit through _onAppBarBackPressed: it confirms, logs the
+    // leave attempt, and saves the score. The Android hardware/gesture back
+    // popped the route directly and skipped all three - no confirmation, no
+    // score, and no proctoring record. `canPop: false` routes that gesture
+    // into the same handler the on-screen arrow uses.
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (bool didPop, Object? result) {
+        if (didPop) return;
+        _onAppBarBackPressed();
+      },
+      child: _buildGameScreen(context),
+    );
+  }
+
+  Widget _buildGameScreen(BuildContext context) {
     return Theme(
       data: _buildTheme(context),
       child: AppBrightnessOverlay(
@@ -650,49 +675,7 @@ class _NumberMemoryGameState extends State<NumberMemoryGame>
   }
 
   ThemeData _buildTheme(BuildContext context) {
-    final base = Theme.of(context);
-    return base.copyWith(
-      scaffoldBackgroundColor: Colors.transparent,
-      appBarTheme: const AppBarTheme(
-        backgroundColor: _inkColor,
-        foregroundColor: Colors.white,
-        centerTitle: true,
-        elevation: 0,
-      ),
-      textTheme: base.textTheme.apply(
-        bodyColor: _inkColor,
-        displayColor: _inkColor,
-      ),
-      elevatedButtonTheme: ElevatedButtonThemeData(
-        style: ElevatedButton.styleFrom(
-          backgroundColor: _accentColor,
-          foregroundColor: Colors.white,
-          minimumSize: const Size.fromHeight(52),
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-          textStyle: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 0.5,
-          ),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
-            side: const BorderSide(color: _inkColor, width: 2),
-          ),
-          elevation: 0,
-        ),
-      ),
-      textButtonTheme: TextButtonThemeData(
-        style: TextButton.styleFrom(
-          foregroundColor: _inkColor,
-          minimumSize: const Size.fromHeight(52),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          textStyle: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      ),
-    );
+    return buildGameTheme(context, ink: _inkColor, accent: _accentColor);
   }
 
   Widget _buildBackground({required Widget child}) {
@@ -798,22 +781,11 @@ class _NumberMemoryGameState extends State<NumberMemoryGame>
     required Widget child,
     EdgeInsetsGeometry padding = const EdgeInsets.all(18),
   }) {
-    return Container(
-      width: double.infinity,
-      padding: padding,
-      decoration: BoxDecoration(
-        color: _panelColor,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: _inkColor, width: 2.2),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x332C3550),
-            offset: Offset(5, 6),
-            blurRadius: 0,
-          ),
-        ],
-      ),
+    return gameCard(
       child: child,
+      panel: _panelColor,
+      ink: _inkColor,
+      padding: padding,
     );
   }
 
@@ -916,7 +888,10 @@ class _NumberMemoryGameState extends State<NumberMemoryGame>
           ),
         ),
         const SizedBox(height: 14),
-        if (!showNumber) HeartsDisplay(hearts: hearts),
+        if (!showNumber) HeartsDisplay(
+          hearts: hearts,
+          maxHearts: gameDifficultyModeHearts(_selectedMode),
+        ),
         if (!showNumber) const SizedBox(height: 14),
         if (showNumber)
           Expanded(

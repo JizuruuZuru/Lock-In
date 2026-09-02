@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:http/http.dart' as http;
@@ -25,6 +26,16 @@ class ApiException implements Exception {
     // client reports every transport failure as a ClientException instead, so
     // it is checked first or a web user would only ever see the generic
     // fallback message below.
+    // Checked before everything else: every client in this folder wraps its
+    // request in `.timeout(...)`, so this is the failure a slow network
+    // actually produces - and it used to fall through to the generic
+    // "Something went wrong" at the bottom.
+    if (error is TimeoutException) {
+      return const ApiException(
+        'The server took too long to answer. Check your connection and try '
+        'again.',
+      );
+    }
     if (error is http.ClientException) {
       return const ApiException(
         'No internet connection. Check your Wi-Fi and try again.',

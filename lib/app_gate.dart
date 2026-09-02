@@ -72,9 +72,18 @@ class _AppGateState extends State<AppGate> {
       data = snapshot.data() ?? <String, dynamic>{};
 
       if (snapshot.exists) {
-        await snapshot.reference.set(
-          {'lastSeenAt': FieldValue.serverTimestamp()},
-          SetOptions(merge: true),
+        // Deliberately not awaited. Persistence is on (see main.dart), so the
+        // read above is served from the local cache when there is no network -
+        // which means the `catch` below never fires offline. Awaiting this
+        // write would then block forever, because a write future only
+        // completes on server acknowledgement, and the gate would sit on
+        // "Getting things ready..." with no timeout and no way out. Touching
+        // `lastSeenAt` is bookkeeping; it must never gate entry to the app.
+        unawaited(
+          snapshot.reference.set(
+            {'lastSeenAt': FieldValue.serverTimestamp()},
+            SetOptions(merge: true),
+          ).catchError((Object _) {}),
         );
       }
     } catch (_) {
@@ -86,7 +95,12 @@ class _AppGateState extends State<AppGate> {
     final record = AppUserRecord.fromMap(user.uid, data);
 
     if (record.disabled) {
+      // Teacher questions are loaded into a process-wide pool, so on a shared
+      // classroom device they would otherwise stay in play for whoever signs
+      // in next. Torn down alongside the cached player name, which was already
+      // being reset here.
       resetPlayerNameCache();
+      await CustomQuestionSync.instance.stop();
       await auth.signOut();
       return _GateResult(route: _GateRoute.disabled, user: user, record: record);
     }
@@ -117,9 +131,13 @@ class _AppGateState extends State<AppGate> {
   }
 
   bool _isProfileComplete(AppUserRecord record, Map<String, dynamic> data) {
-    final hasName = record.firstName.trim().isNotEmpty &&
-            record.lastName.trim().isNotEmpty ||
-        record.fullName.trim().isNotEmpty;
+    // Parenthesised deliberately. `&&` already binds tighter than `||`, so the
+    // behaviour is unchanged - but the line break used to sit at the `||`,
+    // which reads as `first && (last || full)`. This decides whether a child is
+    // sent back through onboarding, so the grouping is spelled out.
+    final hasName =
+        (record.firstName.trim().isNotEmpty && record.lastName.trim().isNotEmpty) ||
+            record.fullName.trim().isNotEmpty;
     final hasAge = record.age != null;
     return data['profile_complete'] == true && hasName && hasAge;
   }

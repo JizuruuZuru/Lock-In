@@ -44,6 +44,10 @@ class CustomQuestionSync {
 
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _subscription;
 
+  /// The in-flight [start] call, so concurrent callers join it rather than
+  /// each attaching their own listener.
+  Future<void>? _starting;
+
   /// Number of published admin questions currently loaded into the bank.
   final ValueNotifier<int> loadedCount = ValueNotifier<int>(0);
 
@@ -63,9 +67,29 @@ class CustomQuestionSync {
   /// Loads the cached questions, then attaches the live listener.
   /// Safe to call more than once.
   Future<void> start() async {
+    // Guarding on `_subscription` alone was not enough: it is assigned inside
+    // `_listen()`, which runs *after* the await below, so two callers could
+    // both pass the guard and both attach a listener - and the first one was
+    // then overwritten and leaked, uncancellable, for the life of the process.
+    // `AppGate` calls this on every boot and re-boots on Retry, so that was
+    // reachable. Hold the in-flight future instead and let the second caller
+    // await the first one's work.
     if (_subscription != null) return;
+    final inFlight = _starting;
+    if (inFlight != null) return inFlight;
 
+    final future = _start();
+    _starting = future;
+    try {
+      await future;
+    } finally {
+      _starting = null;
+    }
+  }
+
+  Future<void> _start() async {
     await loadFromCache();
+    if (_subscription != null) return;
     _listen();
   }
 
@@ -127,9 +151,22 @@ class CustomQuestionSync {
   /// immediately rather than waiting on the listener.
   Future<int> refreshOnce() async {
     try {
-      final records = await _repository.fetchPublished();
-      _apply(records, persist: true);
-      lastError.value = null;
+      // `.get()` falls back to Firestore's local cache when there is no
+      // network, so a refresh that never reached the server used to stamp
+      // `lastSyncedAt` with `now()` and leave the dashboard claiming the bank
+      // was live. Ask which it was and tell the truth.
+      final result = await _repository.fetchPublishedDetailed();
+      final fromServer = !result.fromCache;
+
+      // Mirror the listener's rule: never let an empty *cached* read overwrite
+      // a good on-device copy.
+      final shouldPersist = fromServer || result.records.isNotEmpty;
+
+      _apply(result.records, persist: shouldPersist, markSynced: fromServer);
+      sourceState.value = fromServer
+          ? QuestionSourceState.live
+          : QuestionSourceState.localCache;
+      if (fromServer) lastError.value = null;
       return loadedCount.value;
     } catch (error) {
       lastError.value = _describe(error);
@@ -189,6 +226,7 @@ class CustomQuestionSync {
   }
 
   Future<void> stop() async {
+    _starting = null;
     await _subscription?.cancel();
     _subscription = null;
     SubjectQuestionBank.clearCustomQuestions();

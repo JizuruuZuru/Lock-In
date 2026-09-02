@@ -4,6 +4,8 @@ import 'dart:math';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+
+import 'app_settings_service.dart';
 import 'package:flutter/services.dart';
 
 /// Centralised, optimised sound service.
@@ -132,16 +134,31 @@ class SoundService {
 
   Future<void> setSoundEnabled(bool enabled) async {
     _soundEnabled = enabled;
+    AppSettingsService().saveSoundEnabled(enabled);
     await _syncBgmVolume();
   }
 
   Future<void> setMusicLevel(double level) async {
     _musicLevel = level.clamp(0.0, 1.0);
+    AppSettingsService().saveMusicLevel(_musicLevel);
     await _syncBgmVolume();
   }
 
   void setSfxLevel(double level) {
     _sfxLevel = level.clamp(0.0, 1.0);
+    AppSettingsService().saveSfxLevel(_sfxLevel);
+  }
+
+  /// Applies levels restored from disk at start-up, without writing them back.
+  Future<void> applyRestoredSettings({
+    required bool soundEnabled,
+    required double musicLevel,
+    required double sfxLevel,
+  }) async {
+    _soundEnabled = soundEnabled;
+    _musicLevel = musicLevel.clamp(0.0, 1.0);
+    _sfxLevel = sfxLevel.clamp(0.0, 1.0);
+    await _syncBgmVolume();
   }
 
   Future<void> _syncBgmVolume() async {

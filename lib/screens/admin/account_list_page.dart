@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
@@ -29,6 +31,24 @@ class _AccountListPageState extends State<AccountListPage> {
   final UserAdminRepository _repository = UserAdminRepository();
   final TextEditingController _searchController = TextEditingController();
 
+  /// Mirrors the debounce the question list already uses. Without it every
+  /// keystroke rebuilt and re-filtered the whole (unpaginated) account list.
+  Timer? _searchDebounce;
+  static const Duration _searchDelay = Duration(milliseconds: 220);
+
+  void _onSearchChanged(String value) {
+    _searchDebounce?.cancel();
+    if (value.isEmpty) {
+      // Clearing should feel immediate - there is nothing to wait for.
+      setState(() => _search = '');
+      return;
+    }
+    _searchDebounce = Timer(_searchDelay, () {
+      if (!mounted) return;
+      setState(() => _search = value);
+    });
+  }
+
   /// Held in state so a rebuild does not open a second Firestore listener.
   /// See the matching note in QuestionListPage: the search field setStates on
   /// every keystroke, and an inline stream would flash the list back to its
@@ -49,6 +69,7 @@ class _AccountListPageState extends State<AccountListPage> {
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     _searchController.dispose();
     super.dispose();
   }
@@ -116,6 +137,9 @@ class _AccountListPageState extends State<AccountListPage> {
             ? '${record.displayName} restored.'
             : '${record.displayName} deactivated.',
       );
+    } on AccountGuardException catch (error) {
+      if (!mounted) return;
+      showAdminSnack(context, error.message, isError: true);
     } catch (error) {
       if (!mounted) return;
       showAdminSnack(context, 'Could not update: $error', isError: true);
@@ -166,6 +190,9 @@ class _AccountListPageState extends State<AccountListPage> {
       );
       if (!mounted) return;
       showAdminSnack(context, 'Role updated for ${record.displayName}.');
+    } on AccountGuardException catch (error) {
+      if (!mounted) return;
+      showAdminSnack(context, error.message, isError: true);
     } catch (error) {
       if (!mounted) return;
       showAdminSnack(context, 'Could not update role: $error', isError: true);
@@ -262,6 +289,9 @@ class _AccountListPageState extends State<AccountListPage> {
                     onAction: all.isEmpty
                         ? _createAccount
                         : () {
+                            // Cancel first, or a debounce still in flight
+                            // would put the cleared text straight back.
+                            _searchDebounce?.cancel();
                             _searchController.clear();
                             setState(() {
                               _search = '';
@@ -313,7 +343,7 @@ class _AccountListPageState extends State<AccountListPage> {
         children: [
           TextField(
             controller: _searchController,
-            onChanged: (value) => setState(() => _search = value),
+            onChanged: _onSearchChanged,
             decoration: InputDecoration(
               isDense: true,
               labelText: 'Search accounts',
@@ -394,7 +424,7 @@ class _AccountCard extends StatelessWidget {
     return AdminPanel(
       padding: const EdgeInsets.all(16),
       borderColor: record.disabled ? AdminPalette.muted : AdminPalette.ink,
-      color: record.disabled ? const Color(0xFFF2F0F7) : AdminPalette.panel,
+      color: record.disabled ? AdminPalette.surfaceMuted : AdminPalette.panel,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -465,12 +495,12 @@ class _AccountCard extends StatelessWidget {
               if (record.age != null)
                 AdminChip(
                   label: 'Age ${record.age}',
-                  color: const Color(0xFF00796B),
+                  color: AdminPalette.teal,
                   icon: Icons.cake_rounded,
                 ),
               AdminChip(
                 label: 'Best ${record.highscore}',
-                color: const Color(0xFFEF6C00),
+                color: AdminPalette.warning,
                 icon: Icons.emoji_events_rounded,
               ),
               if (record.cheatAttempts > 0)
@@ -494,7 +524,7 @@ class _AccountCard extends StatelessWidget {
               if (isSelf)
                 const AdminChip(
                   label: 'You',
-                  color: Color(0xFF5E35B1),
+                  color: AdminPalette.secondary,
                   icon: Icons.star_rounded,
                 ),
             ],

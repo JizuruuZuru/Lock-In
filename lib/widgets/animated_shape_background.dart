@@ -102,14 +102,20 @@ class _AnimatedShapeBackgroundState extends State<AnimatedShapeBackground>
       ),
       child: AnimatedBuilder(
         animation: _controller,
-        builder: (context, _) {
+        // The page content does not depend on the animation, so it is passed
+        // through `child` and reused instead of being rebuilt. Without this the
+        // whole subtree under the background - the entire game screen - was
+        // reallocated 60 times a second, and this controller `repeat`s forever
+        // on the home menu, every game, the leaderboard, and both auth screens.
+        child: widget.child,
+        builder: (context, child) {
           final t = _controller.value * math.pi * 2;
           return Stack(
             clipBehavior: Clip.none,
             children: [
               for (var i = 0; i < widget.shapes.length; i++)
                 _buildShape(widget.shapes[i], i, t),
-              Positioned.fill(child: widget.child),
+              Positioned.fill(child: child!),
             ],
           );
         },

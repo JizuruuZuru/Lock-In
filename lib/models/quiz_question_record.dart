@@ -71,6 +71,10 @@ class QuizQuestionRecord {
   /// rejecting the app's own questions.
   static const int maxPromptLength = 1000;
 
+  /// Topics are shown as chips in the question list and the picker, so a long
+  /// one wraps badly. The editor enforces this in the field too.
+  static const int maxTopicLength = 60;
+
   QuizQuestionRecord copyWith({
     String? id,
     SubjectQuizType? subject,
@@ -210,7 +214,7 @@ class QuizQuestionRecord {
     final trimmedTopic = topic.trim();
     if (trimmedTopic.isEmpty) {
       errors['topic'] = 'Pick or type a topic.';
-    } else if (trimmedTopic.length > 60) {
+    } else if (trimmedTopic.length > maxTopicLength) {
       errors['topic'] = 'Keep the topic under 60 characters.';
     }
 

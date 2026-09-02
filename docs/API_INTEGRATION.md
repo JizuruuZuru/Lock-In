@@ -400,7 +400,11 @@ message a child can act on.
 Also handled:
 
 - **Timeouts** — 15 s for Open Trivia DB, 12 s for the dictionary, 20 s for Firestore.
-- **Retry** — every failure state renders a **Try again** button that re-runs the request.
+  A timeout is mapped to its own message ("The server took too long to answer")
+  rather than the generic failure text — see `ApiException.from`.
+- **Retry** — every failure state renders a **Try again** button that re-runs the
+  request. This is a UI affordance, not an automatic client retry policy: the
+  clients do not back off and re-send on their own.
 - **Partial success** — bulk publish collects per-row failures instead of aborting, then reports honestly: *"Saved 8, but 2 failed. First error: …"*.
 - **Server error messages are unwrapped** — Firestore reports failures as `{"error": {"message": "…"}}`; `_describeError` pulls that message out for the debug panel while the user still sees the friendly line.
 - **Malformed rows are filtered out** before reaching the preview, so a question with fewer than two wrong answers can never be imported.

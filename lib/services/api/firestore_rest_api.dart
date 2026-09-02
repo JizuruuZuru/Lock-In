@@ -348,7 +348,19 @@ class FirestoreRestApi {
 
     final body = jsonEncode({'structuredQuery': structuredQuery});
     final response = await _post(uri, body);
-    final decoded = jsonDecode(response.body);
+
+    // A bare `jsonDecode` here let a malformed 200 escape as a raw
+    // FormatException, unlike every sibling method in this class.
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(response.body);
+    } on FormatException catch (error) {
+      throw ApiException(
+        'Firestore sent a query result we could not read.',
+        statusCode: response.statusCode,
+        detail: error.message,
+      );
+    }
     if (decoded is! List) {
       throw const ApiException('Firestore returned an unexpected query result.');
     }

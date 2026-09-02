@@ -1,5 +1,6 @@
 import 'dart:math';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../data/subject_question_bank.dart';
@@ -50,6 +51,9 @@ class _QuestionEditorPageState extends State<QuestionEditorPage> {
   Map<String, String> _errors = const {};
   bool _saving = false;
 
+  /// Form contents as of the last save, or of first open.
+  late List<Object?> _savedSignature;
+
   bool get _isEditing => widget.existing != null;
 
   @override
@@ -77,6 +81,43 @@ class _QuestionEditorPageState extends State<QuestionEditorPage> {
     ];
 
     SoundService().playPageBgm(BgmPage.home);
+    _savedSignature = _signature();
+  }
+
+  /// Everything the form owns, flattened, so an edit can be detected without
+  /// tracking each field. Compared against [_savedSignature] on the way out.
+  List<Object?> _signature() => [
+        _subject.name,
+        _minLevel,
+        _published,
+        _topicController.text.trim(),
+        _instructionController.text.trim(),
+        _promptController.text.trim(),
+        _correctController.text.trim(),
+        ..._wrongControllers.map((c) => c.text.trim()),
+      ];
+
+  bool get _hasUnsavedChanges => !listEquals(_signature(), _savedSignature);
+
+  /// Asks before discarding an edit. The back arrow and the Android back
+  /// gesture used to throw away a half-written question with no prompt at all.
+  Future<void> _handlePop() async {
+    if (!_hasUnsavedChanges) {
+      Navigator.pop(context);
+      return;
+    }
+
+    final discard = await confirmAdminAction(
+      context,
+      title: 'Discard your changes?',
+      message: _isEditing
+          ? 'This question has edits that have not been saved yet.'
+          : 'This question has not been saved yet.',
+      confirmLabel: 'Discard',
+      confirmColor: AdminPalette.danger,
+    );
+    if (!discard || !mounted) return;
+    Navigator.pop(context);
   }
 
   @override
@@ -127,9 +168,12 @@ class _QuestionEditorPageState extends State<QuestionEditorPage> {
 
   void _removeWrongAnswer(int index) {
     if (_wrongControllers.length <= QuizQuestionRecord.minWrongChoices) return;
+    // `_revalidateIfNeeded` calls setState itself, so calling it from inside a
+    // setState callback was a nested setState - a double markNeedsBuild with
+    // unclear intent. One rebuild does both jobs.
+    _wrongControllers.removeAt(index).dispose();
     setState(() {
-      _wrongControllers.removeAt(index).dispose();
-      _revalidateIfNeeded();
+      if (_errors.isNotEmpty) _errors = _buildRecord().validate();
     });
   }
 
@@ -186,6 +230,17 @@ class _QuestionEditorPageState extends State<QuestionEditorPage> {
   Widget build(BuildContext context) {
     final width = MediaQuery.sizeOf(context).width;
 
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (bool didPop, Object? result) {
+        if (didPop) return;
+        _handlePop();
+      },
+      child: _buildEditor(context, width),
+    );
+  }
+
+  Widget _buildEditor(BuildContext context, double width) {
     return AdminScaffold(
       title: _isEditing ? 'Edit Question' : 'New Question',
       subtitle: _isEditing ? 'Update and save' : 'Add a question to the bank',
@@ -320,6 +375,10 @@ class _QuestionEditorPageState extends State<QuestionEditorPage> {
           TextField(
             controller: _instructionController,
             textCapitalization: TextCapitalization.sentences,
+            textInputAction: TextInputAction.next,
+            // Was unbounded: a 5,000-character instruction saved fine and then
+            // overflowed the question screen.
+            maxLength: 200,
             onChanged: (_) => _revalidateIfNeeded(),
             decoration: InputDecoration(
               labelText: 'Instruction',
@@ -366,6 +425,7 @@ class _QuestionEditorPageState extends State<QuestionEditorPage> {
           const SizedBox(height: 14),
           TextField(
             controller: _correctController,
+            textInputAction: TextInputAction.next,
             onChanged: (_) => _revalidateIfNeeded(),
             decoration: InputDecoration(
               labelText: 'Correct answer',
@@ -400,12 +460,17 @@ class _QuestionEditorPageState extends State<QuestionEditorPage> {
           const SizedBox(height: 4),
           for (var i = 0; i < _wrongControllers.length; i++)
             Padding(
+              // Keyed on the controller, not the index. Without a key, removing
+              // choice 2 made Flutter reuse element 2 with choice 3's
+              // controller, so focus and the caret jumped to the wrong row.
+              key: ObjectKey(_wrongControllers[i]),
               padding: const EdgeInsets.only(bottom: 10),
               child: Row(
                 children: [
                   Expanded(
                     child: TextField(
                       controller: _wrongControllers[i],
+                      textInputAction: TextInputAction.next,
                       onChanged: (_) => _revalidateIfNeeded(),
                       decoration: InputDecoration(
                         isDense: true,

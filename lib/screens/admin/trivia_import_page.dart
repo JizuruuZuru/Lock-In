@@ -265,7 +265,7 @@ class _TriviaImportPageState extends State<TriviaImportPage> {
   Widget _aboutPanel() {
     return const AdminPanel(
       color: Color(0xFFFFF6EC),
-      borderColor: Color(0xFFEF6C00),
+      borderColor: AdminPalette.warning,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -707,11 +707,11 @@ class _TriviaImportPageState extends State<TriviaImportPage> {
                     children: [
                       AdminChip(
                         label: question.difficulty.toUpperCase(),
-                        color: const Color(0xFFEF6C00),
+                        color: AdminPalette.warning,
                       ),
                       AdminChip(
                         label: 'Unlocks Lv ${question.suggestedMinLevel}',
-                        color: const Color(0xFF00796B),
+                        color: AdminPalette.teal,
                       ),
                       if (duplicate)
                         const AdminChip(
@@ -837,7 +837,7 @@ class _TriviaImportPageState extends State<TriviaImportPage> {
           width: double.infinity,
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
-            color: const Color(0xFF1E1633),
+            color: AdminPalette.codeBg,
             borderRadius: BorderRadius.circular(14),
             border: Border.all(color: AdminPalette.ink, width: 2),
           ),
@@ -849,7 +849,7 @@ class _TriviaImportPageState extends State<TriviaImportPage> {
                 fontFamily: 'monospace',
                 fontSize: 11.5,
                 height: 1.5,
-                color: Color(0xFFD7CCF5),
+                color: AdminPalette.codeFg,
               ),
             ),
           ),

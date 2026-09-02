@@ -5,17 +5,27 @@ import 'package:uuid/uuid.dart';
 import '../utils/game_key.dart';
 
 class GameLogger {
-  static String? _currentSessionId;
-  static String? _currentGameName;
+  /// One session id per game, rather than one for the whole process.
+  ///
+  /// A single `_currentSessionId` collided whenever two game screens were
+  /// alive at once: opening game B clobbered game A's id, and B's `dispose()`
+  /// nulled it - so when A then logged its result it minted a *fresh* id and
+  /// wrote a second `game_logs` document for what was one session, showing up
+  /// as a duplicate row in the player's history.
+  static final Map<String, String> _sessionIdByGame = <String, String>{};
 
   static void startNewSession(String gameName) {
-    _currentSessionId = const Uuid().v4();
-    _currentGameName = gameName;
+    _sessionIdByGame[gameName] = const Uuid().v4();
   }
 
-  static void endSession() {
-    _currentSessionId = null;
-    _currentGameName = null;
+  /// Ends one game's session. Passing no name clears every session, which is
+  /// only wanted on sign-out.
+  static void endSession([String? gameName]) {
+    if (gameName == null) {
+      _sessionIdByGame.clear();
+      return;
+    }
+    _sessionIdByGame.remove(gameName);
   }
 
   /// Shared Firebase history logger for all games.
@@ -25,30 +35,34 @@ class GameLogger {
   /// [extraHighscoreFields] lets a caller fold its own "keep the larger value"
   /// fields - a per-lesson highscore, say - into the same transaction, rather
   /// than doing a second read-then-write against the same document.
+  ///
+  /// [extraFields] are merged as-is on every save - "last score", "last level"
+  /// and similar latest-wins bookkeeping. They ride along in the same
+  /// transaction as the highscores, which is what lets a caller drop the
+  /// separate `users/{uid}` write it used to make right after this one.
   static Future<void> logGame({
     required String gameName,
     required int score,
     String? difficulty,
     Map<String, int> extraHighscoreFields = const <String, int>{},
+    Map<String, Object?> extraFields = const <String, Object?>{},
   }) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
-    if (_currentSessionId == null || _currentGameName != gameName) {
-      startNewSession(gameName);
-    }
+    final sessionId = _sessionIdByGame[gameName] ??= const Uuid().v4();
 
     final firestore = FirebaseFirestore.instance;
     final userRef = firestore.collection('users').doc(user.uid);
     final now = FieldValue.serverTimestamp();
     final gameKey = safeGameKey(gameName);
 
-    await userRef.collection('game_logs').doc(_currentSessionId).set({
+    await userRef.collection('game_logs').doc(sessionId).set({
       'game': gameName,
       'gameKey': gameKey,
       'score': score,
       if (difficulty != null) 'difficulty': difficulty,
-      'sessionId': _currentSessionId,
+      'sessionId': sessionId,
       'timestamp': now,
       'updatedAt': now,
     }, SetOptions(merge: true));
@@ -76,6 +90,7 @@ class GameLogger {
             'last_score': score,
             'last_played': now,
             'email': user.email,
+            ...extraFields,
             for (final entry in candidates.entries)
               if (entry.value > _storedScore(data, entry.key)) entry.key: entry.value,
           },
@@ -109,6 +124,7 @@ class GameLogger {
         'last_score': score,
         'last_played': now,
         'email': user.email,
+        ...extraFields,
         for (final entry in candidates.entries)
           if (entry.value > _storedScore(cached, entry.key)) entry.key: entry.value,
       }, SetOptions(merge: true));

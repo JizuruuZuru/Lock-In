@@ -32,3 +32,13 @@ String buildNameCredentialEmail({
 final RegExp _nonAlphanumericRun = RegExp(r'[^a-z0-9]+');
 final RegExp _dotRun = RegExp(r'\.+');
 final RegExp _edgeDots = RegExp(r'^\.|\.$');
+
+/// The single rule for turning a typed password into the one Firebase stores.
+///
+/// Login used to `.trim()` while register and the admin account editor did not,
+/// so a password created with a leading or trailing space was stored untrimmed
+/// and then trimmed on the way back in - it could never be typed again, and
+/// there is no password reset for a synthetic `@lockinplayers.app` address to
+/// recover with. Every screen that reads a password field now goes through
+/// here, so the two halves cannot drift apart again.
+String normalizePassword(String value) => value.trim();

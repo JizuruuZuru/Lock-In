@@ -47,6 +47,52 @@ class _QuestionListPageState extends State<QuestionListPage> {
   /// ones carry whole reading passages - roughly a megabyte of text in total.
   /// Doing that on each keystroke made typing lag, so the search waits until
   /// the admin stops typing. The field itself stays instant either way.
+  /// Ids picked for a bulk action. Empty means selection mode is off.
+  ///
+  /// `QuestionRepository.deleteMany` has existed - and been documented as
+  /// "admin multi-select" - since the repository was written, with no caller.
+  /// This is that caller. Bundled questions cannot be selected: they live in
+  /// the binary, not Firestore, and there is nothing to delete.
+  final Set<String> _selected = <String>{};
+
+  bool get _selecting => _selected.isNotEmpty;
+
+  void _toggleSelected(QuizQuestionRecord record) {
+    if (record.bundled) return;
+    setState(() {
+      if (!_selected.remove(record.id)) _selected.add(record.id);
+    });
+  }
+
+  Future<void> _deleteSelected() async {
+    final count = _selected.length;
+    if (count == 0) return;
+
+    final confirmed = await confirmAdminAction(
+      context,
+      title: count == 1 ? 'Delete 1 question?' : 'Delete $count questions?',
+      message: 'This cannot be undone. Students will stop getting '
+          '${count == 1 ? 'it' : 'them'} straight away.',
+      confirmLabel: 'Delete',
+      confirmColor: AdminPalette.danger,
+    );
+    if (!confirmed || !mounted) return;
+
+    try {
+      final removed = await _repository.deleteMany(_selected);
+      await _refreshPlayableBank();
+      if (!mounted) return;
+      setState(_selected.clear);
+      showAdminSnack(
+        context,
+        removed == 1 ? '1 question deleted.' : '$removed questions deleted.',
+      );
+    } catch (error) {
+      if (!mounted) return;
+      showAdminSnack(context, 'Could not delete: $error', isError: true);
+    }
+  }
+
   Timer? _searchDebounce;
   static const Duration _searchDelay = Duration(milliseconds: 220);
 
@@ -147,6 +193,22 @@ class _QuestionListPageState extends State<QuestionListPage> {
   }
 
   Future<void> _togglePublished(QuizQuestionRecord record) async {
+    // Hiding pulls a question out of every student's pool immediately, so it
+    // is confirmed like the other destructive actions. Publishing is additive
+    // and goes through without a prompt.
+    if (record.published) {
+      final confirmed = await confirmAdminAction(
+        context,
+        title: 'Hide this question?',
+        message:
+            'Students will stop getting it straight away. You can publish it '
+            'again at any time.',
+        confirmLabel: 'Hide',
+        confirmColor: AdminPalette.danger,
+      );
+      if (!confirmed || !mounted) return;
+    }
+
     try {
       final syncState =
           await _repository.setPublished(record.id, !record.published);
@@ -232,9 +294,23 @@ class _QuestionListPageState extends State<QuestionListPage> {
     final width = MediaQuery.sizeOf(context).width;
 
     return AdminScaffold(
-      title: 'Questions',
-      subtitle: 'Create, edit, and delete quiz questions',
+      title: _selecting ? '${_selected.length} selected' : 'Questions',
+      subtitle: _selecting
+          ? 'Tap a number to add or remove'
+          : 'Create, edit, and delete quiz questions',
       actions: [
+        if (_selecting) ...[
+          IconButton(
+            tooltip: 'Delete selected',
+            icon: const Icon(Icons.delete_sweep_rounded),
+            onPressed: _deleteSelected,
+          ),
+          IconButton(
+            tooltip: 'Cancel selection',
+            icon: const Icon(Icons.close_rounded),
+            onPressed: () => setState(_selected.clear),
+          ),
+        ],
         IconButton(
           tooltip: 'Import from Open Trivia DB',
           icon: const Icon(Icons.cloud_download_rounded),
@@ -349,6 +425,10 @@ class _QuestionListPageState extends State<QuestionListPage> {
                         child: _QuestionCard(
                           record: visible[index],
                           index: index + 1,
+                          selecting: _selecting,
+                          selected: _selected.contains(visible[index].id),
+                          onToggleSelected: () =>
+                              _toggleSelected(visible[index]),
                           onEdit: visible[index].bundled
                               ? _explainBundled
                               : () => _editQuestion(visible[index]),
@@ -510,6 +590,9 @@ class _Listed {
 class _QuestionCard extends StatelessWidget {
   final QuizQuestionRecord record;
   final int index;
+  final bool selecting;
+  final bool selected;
+  final VoidCallback onToggleSelected;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
   final VoidCallback onTogglePublished;
@@ -517,6 +600,9 @@ class _QuestionCard extends StatelessWidget {
   const _QuestionCard({
     required this.record,
     required this.index,
+    required this.selecting,
+    required this.selected,
+    required this.onToggleSelected,
     required this.onEdit,
     required this.onDelete,
     required this.onTogglePublished,
@@ -527,28 +613,50 @@ class _QuestionCard extends StatelessWidget {
     return AdminPanel(
       padding: const EdgeInsets.all(16),
       borderColor: record.published ? AdminPalette.ink : AdminPalette.muted,
-      color: record.published ? AdminPalette.panel : const Color(0xFFF2F0F7),
+      color: record.published ? AdminPalette.panel : AdminPalette.surfaceMuted,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                width: 30,
-                height: 30,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: AdminPalette.accent.withValues(alpha: 0.14),
+              // The row number doubles as the multi-select handle. Long-press
+              // any editable card to start selecting; after that a single tap
+              // here toggles. Bundled questions cannot be selected.
+              Semantics(
+                label: record.bundled
+                    ? 'Question $index, built in'
+                    : (selected
+                        ? 'Question $index, selected'
+                        : 'Question $index'),
+                button: !record.bundled,
+                child: InkWell(
+                  onTap: record.bundled ? null : onToggleSelected,
+                  onLongPress: record.bundled ? null : onToggleSelected,
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: AdminPalette.accent, width: 1.6),
-                ),
-                child: Text(
-                  '$index',
-                  style: const TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w900,
-                    color: AdminPalette.accent,
+                  child: Container(
+                    width: 30,
+                    height: 30,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: selected
+                          ? AdminPalette.accent
+                          : AdminPalette.accent.withValues(alpha: 0.14),
+                      borderRadius: BorderRadius.circular(10),
+                      border:
+                          Border.all(color: AdminPalette.accent, width: 1.6),
+                    ),
+                    child: selected
+                        ? const Icon(Icons.check_rounded,
+                            size: 18, color: Colors.white)
+                        : Text(
+                            '$index',
+                            style: const TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w900,
+                              color: AdminPalette.accent,
+                            ),
+                          ),
                   ),
                 ),
               ),
@@ -578,18 +686,18 @@ class _QuestionCard extends StatelessWidget {
               ),
               AdminChip(
                 label: record.topic,
-                color: const Color(0xFF00796B),
+                color: AdminPalette.teal,
                 icon: Icons.label_rounded,
               ),
               AdminChip(
                 label: 'Level ${record.minLevel}+',
-                color: const Color(0xFFEF6C00),
+                color: AdminPalette.warning,
                 icon: Icons.trending_up_rounded,
               ),
               if (record.source == QuestionSource.openTrivia)
                 const AdminChip(
                   label: 'Open Trivia DB',
-                  color: Color(0xFF5E35B1),
+                  color: AdminPalette.secondary,
                   icon: Icons.cloud_rounded,
                 ),
               if (record.bundled)
@@ -651,30 +759,24 @@ class _QuestionCard extends StatelessWidget {
                   record.published
                       ? Icons.visibility_off_rounded
                       : Icons.visibility_rounded,
-                  color: record.bundled
-                      ? AdminPalette.muted.withValues(alpha: 0.4)
-                      : AdminPalette.muted,
+                  color: AdminPalette.muted,
                 ),
               ),
               IconButton(
                 tooltip: record.bundled ? 'Built-in - cannot be edited' : 'Edit',
                 onPressed: onEdit,
-                icon: Icon(
+                icon: const Icon(
                   Icons.edit_rounded,
-                  color: record.bundled
-                      ? AdminPalette.accent.withValues(alpha: 0.35)
-                      : AdminPalette.accent,
+                  color: AdminPalette.accent,
                 ),
               ),
               IconButton(
                 tooltip:
                     record.bundled ? 'Built-in - cannot be deleted' : 'Delete',
                 onPressed: onDelete,
-                icon: Icon(
+                icon: const Icon(
                   Icons.delete_rounded,
-                  color: record.bundled
-                      ? AdminPalette.danger.withValues(alpha: 0.3)
-                      : AdminPalette.danger,
+                  color: AdminPalette.danger,
                 ),
               ),
             ],

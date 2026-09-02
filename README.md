@@ -14,7 +14,7 @@ without an app restart.
 | **Framework** | Flutter 3.44 · Dart 3.12 |
 | **Backend** | Firebase Authentication + Cloud Firestore |
 | **Platforms** | Android · iOS · Web · Windows · macOS · Linux |
-| **Tests** | 153, all passing |
+| **Tests** | 241, all passing |
 
 ---
 
@@ -106,7 +106,7 @@ Repeat step 2 with your release keystore for a release build.
 
 ```bash
 flutter analyze                                     # static analysis
-flutter test                                        # 153 unit tests
+flutter test                                        # 241 unit tests
 flutter test test/firestore_rest_api_test.dart      # the REST layer alone
 ```
 
@@ -140,7 +140,7 @@ lib/
 │   └── user_admin_repository.dart    CRUD — users
 ├── utils/                      theme, layout, Firebase options
 └── widgets/                    21 reusable widgets
-test/                           11 files, 153 tests
+test/                           15 files, 241 tests
 tool/                           CLI scripts — API smoke test, sample-data seeder
 docs/                           project documentation
 firestore.rules                 server-side role enforcement

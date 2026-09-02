@@ -49,6 +49,21 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
               child: StreamBuilder<QuerySnapshot>(
                 stream: _entriesStream,
                 builder: (context, snapshot) {
+                  // Checked before hasData: a permission or network failure
+                  // left hasData false, so a real error rendered as the cheery
+                  // "No scores yet. Play some games!" empty state.
+                  if (snapshot.hasError) {
+                    return _card(
+                      child: const Center(
+                        child: Text(
+                          'Could not load the leaderboard right now. '
+                          'Check your connection and try again.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(fontSize: 16),
+                        ),
+                      ),
+                    );
+                  }
                   if (snapshot.connectionState == ConnectionState.waiting) {
                     return const Center(child: CircularProgressIndicator());
                   }
@@ -172,7 +187,23 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                       ),
                       // Leaderboard list
                       Expanded(
-                        child: ListView.builder(
+                        // The dropdown filters client-side out of the global
+                        // top 50, so picking a game whose scores are not in
+                        // that 50 produced an itemCount of 0 - a blank white
+                        // area with nothing explaining it. The only empty
+                        // check above runs before the filter.
+                        child: docs.isEmpty
+                            ? _card(
+                                child: Center(
+                                  child: Text(
+                                    'No scores for $_selectedGame yet. '
+                                    'Play a round to get on the board!',
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(fontSize: 16),
+                                  ),
+                                ),
+                              )
+                            : ListView.builder(
                           itemCount: docs.length,
                           itemBuilder: (context, index) {
                             final data = docs[index].data() as Map<String, dynamic>;
@@ -249,7 +280,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                               ),
                             );
                           },
-                        ),
+                              ),
                       ),
                     ],
                   );

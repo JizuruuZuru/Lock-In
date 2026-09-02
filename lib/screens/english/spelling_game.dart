@@ -1,18 +1,17 @@
 import 'dart:async';
 import 'dart:math';
 
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../../data/subject_question_bank.dart';
+import '../../services/game_result_recorder.dart';
 import '../../services/connectivity_service.dart';
 import '../../services/face_proctor_service.dart';
 import '../../services/game_logger.dart';
-import '../../services/leaderboard_service.dart';
 import '../../services/leave_attempt_logger.dart';
 import '../../services/sound_service.dart';
 import '../../services/text_to_speech_service.dart';
+import '../../utils/game_theme.dart';
 import '../../utils/game_difficulty_mode.dart';
 import '../../utils/game_key.dart';
 import '../../utils/responsive_layout.dart';
@@ -158,7 +157,7 @@ class _EnglishSpellingGameState extends State<EnglishSpellingGame> {
   bool showCorrectSplash = false;
   bool showIncorrectSplash = false;
   bool _showExitConfirmation = false;
-  bool _isSavingScore = false;
+  final GameSaveGate _saveGate = GameSaveGate();
   bool _isOffline = false;
 
   int score = 0;
@@ -190,7 +189,7 @@ class _EnglishSpellingGameState extends State<EnglishSpellingGame> {
 
   @override
   void dispose() {
-    GameLogger.endSession();
+    GameLogger.endSession(_gameName);
     TextToSpeechService().stop();
     SoundService().playPageBgm(BgmPage.home);
     super.dispose();
@@ -211,7 +210,6 @@ class _EnglishSpellingGameState extends State<EnglishSpellingGame> {
       showCorrectSplash = false;
       showIncorrectSplash = false;
       _showExitConfirmation = false;
-      _isSavingScore = false;
       score = 0;
       _levelPoints = 0;
       level = 1;
@@ -421,43 +419,15 @@ class _EnglishSpellingGameState extends State<EnglishSpellingGame> {
   }
 
   Future<void> saveScore() async {
-    if (_isSavingScore) return;
-    _isSavingScore = true;
-
-    try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) return;
-
-      final quizKey = 'english_${safeGameKey('spelling')}';
-      final highscoreKey = '${quizKey}_highscore';
-      final firestore = FirebaseFirestore.instance;
-      final userRef = firestore.collection('users').doc(user.uid);
-
-      await GameLogger.logGame(
+    await _saveGate.run(() async {
+      await saveGameResult(
         gameName: _gameName,
         score: score,
+        level: level,
         difficulty: gameDifficultyModeLabel(_selectedMode),
-        extraHighscoreFields: {highscoreKey: score},
+        storageKey: 'english_${safeGameKey('spelling')}',
       );
-
-      await userRef.set({
-        '${quizKey}_last_score': score,
-        '${quizKey}_last_level': level,
-        '${quizKey}_last_played': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
-
-      if (score > 0) {
-        await updateLeaderboardEntry(
-          gameName: _gameName,
-          newScore: score,
-          difficulty: gameDifficultyModeLabel(_selectedMode),
-        );
-      }
-    } catch (error) {
-      debugPrint('Error in saveScore ($_gameName): $error');
-    } finally {
-      _isSavingScore = false;
-    }
+    });
   }
 
   Future<void> _onBackPressed() async {
@@ -476,6 +446,22 @@ class _EnglishSpellingGameState extends State<EnglishSpellingGame> {
 
   @override
   Widget build(BuildContext context) {
+    // The screen drives every exit through _onBackPressed: it confirms, logs the
+    // leave attempt, and saves the score. The Android hardware/gesture back
+    // popped the route directly and skipped all three - no confirmation, no
+    // score, and no proctoring record. `canPop: false` routes that gesture
+    // into the same handler the on-screen arrow uses.
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (bool didPop, Object? result) {
+        if (didPop) return;
+        _onBackPressed();
+      },
+      child: _buildGameScreen(context),
+    );
+  }
+
+  Widget _buildGameScreen(BuildContext context) {
     return Theme(
       data: _buildTheme(context),
       child: AppBrightnessOverlay(
@@ -567,37 +553,8 @@ class _EnglishSpellingGameState extends State<EnglishSpellingGame> {
   }
 
   ThemeData _buildTheme(BuildContext context) {
-    final base = Theme.of(context);
     final config = _config;
-    return base.copyWith(
-      scaffoldBackgroundColor: Colors.transparent,
-      appBarTheme: AppBarTheme(
-        backgroundColor: config.inkColor,
-        foregroundColor: Colors.white,
-        centerTitle: true,
-        elevation: 0,
-      ),
-      textTheme: base.textTheme.apply(
-        bodyColor: config.inkColor,
-        displayColor: config.inkColor,
-      ),
-      colorScheme: base.colorScheme.copyWith(
-        primary: config.accentColor,
-        secondary: config.accentColor,
-        surface: config.panelColor,
-      ),
-      elevatedButtonTheme: ElevatedButtonThemeData(
-        style: ElevatedButton.styleFrom(
-          backgroundColor: config.accentColor,
-          foregroundColor: Colors.white,
-          minimumSize: const Size.fromHeight(54),
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-          textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-          elevation: 0,
-        ),
-      ),
-    );
+    return buildGameTheme(context, ink: config.inkColor, accent: config.accentColor);
   }
 
   Widget _buildBackground({required Widget child}) {
@@ -649,18 +606,11 @@ class _EnglishSpellingGameState extends State<EnglishSpellingGame> {
     EdgeInsetsGeometry padding = const EdgeInsets.all(18),
   }) {
     final config = _config;
-    return Container(
-      width: double.infinity,
-      padding: padding,
-      decoration: BoxDecoration(
-        color: config.panelColor,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: config.inkColor, width: 2.2),
-        boxShadow: const [
-          BoxShadow(color: Color(0x332C3550), offset: Offset(5, 6), blurRadius: 0),
-        ],
-      ),
+    return gameCard(
       child: child,
+      panel: config.panelColor,
+      ink: config.inkColor,
+      padding: padding,
     );
   }
 
@@ -825,7 +775,10 @@ class _EnglishSpellingGameState extends State<EnglishSpellingGame> {
                         style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
                       ),
                       const SizedBox(width: 10),
-                      HeartsDisplay(hearts: hearts),
+                      HeartsDisplay(
+          hearts: hearts,
+          maxHearts: gameDifficultyModeHearts(_selectedMode),
+        ),
                     ],
                   ),
                 ),

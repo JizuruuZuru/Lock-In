@@ -1,4 +1,5 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -41,6 +42,9 @@ class _AccountEditorPageState extends State<AccountEditorPage> {
   late bool _disabled;
 
   Map<String, String> _errors = const {};
+
+  /// Form contents as of first open.
+  late List<Object?> _savedSignature;
   bool _saving = false;
   bool _obscurePassword = true;
 
@@ -58,6 +62,43 @@ class _AccountEditorPageState extends State<AccountEditorPage> {
     _disabled = existing?.disabled ?? false;
 
     SoundService().playPageBgm(BgmPage.home);
+    _savedSignature = _signature();
+  }
+
+  /// Everything the form owns, flattened, so an edit can be detected without
+  /// tracking each field. Compared against [_savedSignature] on the way out.
+  List<Object?> _signature() => [
+        _firstNameController.text.trim(),
+        _lastNameController.text.trim(),
+        _ageController.text.trim(),
+        _role.name,
+        _disabled,
+        // Only meaningful when creating; harmless to include either way.
+        _passwordController.text,
+        _confirmController.text,
+      ];
+
+  bool get _hasUnsavedChanges => !listEquals(_signature(), _savedSignature);
+
+  /// Asks before discarding an edit. The back arrow and the Android back
+  /// gesture used to throw away a half-filled account with no prompt.
+  Future<void> _handlePop() async {
+    if (!_hasUnsavedChanges) {
+      Navigator.pop(context);
+      return;
+    }
+
+    final discard = await confirmAdminAction(
+      context,
+      title: 'Discard your changes?',
+      message: _isEditing
+          ? 'This account has edits that have not been saved yet.'
+          : 'This account has not been created yet.',
+      confirmLabel: 'Discard',
+      confirmColor: AdminPalette.danger,
+    );
+    if (!discard || !mounted) return;
+    Navigator.pop(context);
   }
 
   @override
@@ -115,10 +156,10 @@ class _AccountEditorPageState extends State<AccountEditorPage> {
     final errors = _buildRecord().validate();
 
     if (!_isEditing) {
-      final password = _passwordController.text;
+      final password = normalizePassword(_passwordController.text);
       if (password.length < 6) {
         errors['password'] = 'Password must be at least 6 characters.';
-      } else if (password != _confirmController.text) {
+      } else if (password != normalizePassword(_confirmController.text)) {
         errors['confirm'] = 'The two passwords do not match.';
       }
     }
@@ -150,7 +191,7 @@ class _AccountEditorPageState extends State<AccountEditorPage> {
           firstName: _firstNameController.text,
           lastName: _lastNameController.text,
           age: int.tryParse(_ageController.text.trim()),
-          password: _passwordController.text,
+          password: normalizePassword(_passwordController.text),
           role: _role,
         );
         if (!mounted) return;
@@ -161,6 +202,12 @@ class _AccountEditorPageState extends State<AccountEditorPage> {
       if (!mounted) return;
       setState(() => _errors = error.errors);
       showAdminSnack(context, error.summary, isError: true);
+    } on AccountGuardException catch (error) {
+      // Refused because the change would lock somebody out of the panel, not
+      // because a field is wrong - so it is reported on its own rather than
+      // painted under an unrelated input.
+      if (!mounted) return;
+      showAdminSnack(context, error.message, isError: true);
     } on FirebaseAuthException catch (error) {
       if (!mounted) return;
       final message = switch (error.code) {
@@ -187,6 +234,17 @@ class _AccountEditorPageState extends State<AccountEditorPage> {
   Widget build(BuildContext context) {
     final width = MediaQuery.sizeOf(context).width;
 
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (bool didPop, Object? result) {
+        if (didPop) return;
+        _handlePop();
+      },
+      child: _buildEditor(context, width),
+    );
+  }
+
+  Widget _buildEditor(BuildContext context, double width) {
     return AdminScaffold(
       title: _isEditing ? 'Edit Account' : 'New Account',
       subtitle: _isEditing ? widget.existing!.displayName : 'Create a student or admin',
@@ -267,11 +325,13 @@ class _AccountEditorPageState extends State<AccountEditorPage> {
           TextField(
             controller: _ageController,
             keyboardType: TextInputType.number,
+            textInputAction: TextInputAction.next,
             inputFormatters: [
               FilteringTextInputFormatter.digitsOnly,
               LengthLimitingTextInputFormatter(3),
             ],
             onChanged: (_) => _revalidateIfNeeded(),
+            onSubmitted: (_) => _saving ? null : _save(),
             decoration: InputDecoration(
               labelText: 'Age',
               prefixIcon: const Icon(Icons.cake_rounded),
@@ -338,6 +398,7 @@ class _AccountEditorPageState extends State<AccountEditorPage> {
           TextField(
             controller: _passwordController,
             obscureText: _obscurePassword,
+            textInputAction: TextInputAction.next,
             onChanged: (_) => _revalidateIfNeeded(),
             decoration: InputDecoration(
               labelText: 'Password',
@@ -358,7 +419,10 @@ class _AccountEditorPageState extends State<AccountEditorPage> {
           TextField(
             controller: _confirmController,
             obscureText: _obscurePassword,
+            // Last field in the form, so Enter saves.
+            textInputAction: TextInputAction.done,
             onChanged: (_) => _revalidateIfNeeded(),
+            onSubmitted: (_) => _saving ? null : _save(),
             decoration: InputDecoration(
               labelText: 'Confirm password',
               prefixIcon: const Icon(Icons.lock_reset_rounded),
@@ -450,14 +514,14 @@ class _AccountEditorPageState extends State<AccountEditorPage> {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: const Color(0xFFFFF8E1),
+                color: AdminPalette.noticeBg,
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: const Color(0xFFE0A800), width: 1.6),
+                border: Border.all(color: AdminPalette.noticeBorder, width: 1.6),
               ),
               child: const Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(Icons.info_outline_rounded, size: 18, color: Color(0xFF8A6100)),
+                  Icon(Icons.info_outline_rounded, size: 18, color: AdminPalette.noticeInk),
                   SizedBox(width: 8),
                   Expanded(
                     child: Text(
@@ -466,7 +530,7 @@ class _AccountEditorPageState extends State<AccountEditorPage> {
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
                         height: 1.35,
-                        color: Color(0xFF8A6100),
+                        color: AdminPalette.noticeInk,
                       ),
                     ),
                   ),

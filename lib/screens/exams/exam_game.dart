@@ -1,19 +1,19 @@
 import 'dart:async';
 import 'dart:math';
 
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../services/game_result_recorder.dart';
+import '../../data/subject_question_bank.dart';
 import '../../services/connectivity_service.dart';
 import '../../services/game_logger.dart';
 import '../../services/exam_firestore_service.dart';
 import '../../services/face_proctor_contract.dart';
 import '../../services/face_proctor_service.dart';
-import '../../services/leaderboard_service.dart';
 import '../../services/leave_attempt_logger.dart';
 import '../../services/sound_service.dart';
+import '../../utils/game_theme.dart';
 import '../../utils/game_difficulty_mode.dart';
 import '../../utils/responsive_layout.dart';
 import '../../widgets/animated_shape_background.dart';
@@ -138,6 +138,10 @@ class _ExamGameState extends State<ExamGame> {
   static const Duration _incorrectFeedbackDuration = Duration(milliseconds: 1450);
 
   final Random _random = Random();
+
+  /// Keys of questions already served this run, so the bank does not repeat
+  /// one before the pool is exhausted.
+  final Set<String> _askedQuestionKeys = <String>{};
   final FaceProctorService _faceProctor = createFaceProctorService();
   final ExamFirestoreService _firestoreService = ExamFirestoreService();
 
@@ -146,7 +150,7 @@ class _ExamGameState extends State<ExamGame> {
   bool showCorrectSplash = false;
   bool showIncorrectSplash = false;
   bool _showExitConfirmation = false;
-  bool _isSavingScore = false;
+  final GameSaveGate _saveGate = GameSaveGate();
   bool _isOffline = false;
 
   int score = 0;
@@ -183,7 +187,7 @@ class _ExamGameState extends State<ExamGame> {
 
   @override
   void dispose() {
-    GameLogger.endSession();
+    GameLogger.endSession(_gameName);
     SoundService().playPageBgm(BgmPage.home);
     super.dispose();
   }
@@ -203,7 +207,6 @@ class _ExamGameState extends State<ExamGame> {
       showCorrectSplash = false;
       showIncorrectSplash = false;
       _showExitConfirmation = false;
-      _isSavingScore = false;
       score = 0;
       _levelPoints = 0;
       level = 1;
@@ -234,29 +237,29 @@ class _ExamGameState extends State<ExamGame> {
           (subject: math, build: _subtractionQuestion),
           (subject: math, build: _romanQuestion),
           (subject: math, build: _placeValueQuestion),
-          (subject: english, build: _englishGrammarQuestion),
-          (subject: english, build: _englishReadingQuestion),
-          (subject: science, build: _scienceLivingThingQuestion),
-          (subject: science, build: _scienceWeatherQuestion),
+          (subject: english, build: _englishBankQuestion),
+          (subject: english, build: _englishBankQuestion),
+          (subject: science, build: _scienceBankQuestion),
+          (subject: science, build: _scienceBankQuestion),
         ],
       ExamDifficulty.medium => <_ExamQuestionBuilder>[
           (subject: math, build: _multiplicationQuestion),
           (subject: math, build: _divisionQuestion),
           (subject: math, build: _roundingQuestion),
           (subject: math, build: _analogClockQuestion),
-          (subject: english, build: _englishVocabularyQuestion),
-          (subject: english, build: _englishPhonicsQuestion),
-          (subject: science, build: _scienceBodyQuestion),
-          (subject: science, build: _scienceEnergyQuestion),
+          (subject: english, build: _englishBankQuestion),
+          (subject: english, build: _englishBankQuestion),
+          (subject: science, build: _scienceBankQuestion),
+          (subject: science, build: _scienceBankQuestion),
         ],
       ExamDifficulty.hard => <_ExamQuestionBuilder>[
           (subject: math, build: _orderOperationsQuestion),
           (subject: math, build: _fractionQuestion),
           (subject: math, build: _measurementQuestion),
-          (subject: english, build: _englishGrammarQuestion),
-          (subject: english, build: _englishReadingQuestion),
-          (subject: science, build: _scienceMatterQuestion),
-          (subject: science, build: _scienceSpaceQuestion),
+          (subject: english, build: _englishBankQuestion),
+          (subject: english, build: _englishBankQuestion),
+          (subject: science, build: _scienceBankQuestion),
+          (subject: science, build: _scienceBankQuestion),
         ],
     };
 
@@ -272,6 +275,56 @@ class _ExamGameState extends State<ExamGame> {
     // keep at least one subject selected) rather than crashing the exam.
     return filtered.isEmpty ? baseBuilders : filtered;
   }
+
+  /// Draws a real question from [SubjectQuestionBank] instead of returning a
+  /// fixed one.
+  ///
+  /// Maths in this exam is procedural and effectively unbounded, but every
+  /// English and Science question used to be a `const _ExamQuestion` with fixed
+  /// text - two per subject per difficulty, and Hard reused Easy's two
+  /// verbatim. So "English Hard Exam" served the same two easy questions
+  /// forever, while 5,793 bundled questions sat unused and the start panel
+  /// promised "Questions are randomized every round."
+  ///
+  /// [_askedQuestionKeys] stops a question repeating inside one run; when the
+  /// pool is exhausted the bank widens on its own rather than returning
+  /// nothing.
+  _ExamQuestion _bankQuestion(SubjectQuizType subject) {
+    final drawn = SubjectQuestionBank.randomQuestion(
+      subject: subject,
+      level: _bankLevel,
+      random: _random,
+      excludeKeys: _askedQuestionKeys,
+    ).shuffled(_random);
+
+    _askedQuestionKeys.add(SubjectQuestionBank.questionKey(drawn));
+
+    final subjectLabel = subject == SubjectQuizType.english
+        ? 'English'
+        : 'Science';
+
+    return _ExamQuestion(
+      topic: '$subjectLabel: ${drawn.topic}',
+      instruction: drawn.instruction,
+      prompt: drawn.prompt,
+      acceptedAnswers: [drawn.correctAnswer],
+      choices: drawn.choices,
+    );
+  }
+
+  /// The bank gates questions by `minLevel`, so the exam's own difficulty maps
+  /// onto it: an Easy exam draws from level-1 material, Hard from the top.
+  int get _bankLevel => switch (widget.difficulty) {
+        ExamDifficulty.easy => 1,
+        ExamDifficulty.medium => 2,
+        ExamDifficulty.hard => 4,
+      };
+
+  _ExamQuestion _englishBankQuestion() =>
+      _bankQuestion(SubjectQuizType.english);
+
+  _ExamQuestion _scienceBankQuestion() =>
+      _bankQuestion(SubjectQuizType.science);
 
   bool _isEnglishTopic(String topic) {
     final normalizedTopic = topic.toLowerCase();
@@ -314,111 +367,6 @@ class _ExamGameState extends State<ExamGame> {
     if (widget.difficulty == ExamDifficulty.easy) return level <= 3 ? 18 : 16;
     if (widget.difficulty == ExamDifficulty.medium) return level <= 3 ? 20 : 18;
     return level <= 3 ? 24 : 21;
-  }
-
-  _ExamQuestion _englishGrammarQuestion() {
-    return const _ExamQuestion(
-      topic: 'English: Grammar',
-      instruction: 'Choose the noun in the sentence.',
-      prompt: 'The bright cat sat on the mat.',
-      acceptedAnswers: ['cat'],
-      choices: ['cat', 'bright', 'sat', 'mat'],
-    );
-  }
-
-  _ExamQuestion _englishReadingQuestion() {
-    return const _ExamQuestion(
-      topic: 'English: Reading',
-      instruction: 'Choose the main idea.',
-      prompt: 'Mia found a red bird in the garden and fed it.',
-      acceptedAnswers: ['A bird lived in the garden.'],
-      choices: [
-        'A bird lived in the garden.',
-        'Mia found a blue fish.',
-        'The garden was covered in snow.',
-        'The bird built a toy car.',
-      ],
-    );
-  }
-
-  _ExamQuestion _englishVocabularyQuestion() {
-    return const _ExamQuestion(
-      topic: 'English: Vocabulary',
-      instruction: 'Choose the word with a similar meaning.',
-      prompt: 'Which word means almost the same as happy?',
-      acceptedAnswers: ['glad'],
-      choices: ['glad', 'sad', 'angry', 'tired'],
-    );
-  }
-
-  _ExamQuestion _englishPhonicsQuestion() {
-    return const _ExamQuestion(
-      topic: 'English: Phonics',
-      instruction: 'Choose the word that begins with the sh sound.',
-      prompt: 'Which word begins with the /sh/ sound?',
-      acceptedAnswers: ['ship'],
-      choices: ['ship', 'chip', 'sip', 'tip'],
-    );
-  }
-
-  _ExamQuestion _scienceLivingThingQuestion() {
-    return const _ExamQuestion(
-      topic: 'Science: Living Things',
-      instruction: 'Choose the living thing.',
-      prompt: 'Which one is alive?',
-      acceptedAnswers: ['tree'],
-      choices: ['tree', 'rock', 'chair', 'pencil'],
-    );
-  }
-
-  _ExamQuestion _scienceWeatherQuestion() {
-    return const _ExamQuestion(
-      topic: 'Science: Weather',
-      instruction: 'Choose what we wear when it is cold.',
-      prompt: 'What do we wear on a cold day?',
-      acceptedAnswers: ['coat'],
-      choices: ['coat', 'swimsuit', 'sandals', 'sun hat'],
-    );
-  }
-
-  _ExamQuestion _scienceBodyQuestion() {
-    return const _ExamQuestion(
-      topic: 'Science: Human Body',
-      instruction: 'Choose the body part used for breathing.',
-      prompt: 'Which organs help you breathe?',
-      acceptedAnswers: ['lungs'],
-      choices: ['lungs', 'knees', 'fingernails', 'teeth'],
-    );
-  }
-
-  _ExamQuestion _scienceEnergyQuestion() {
-    return const _ExamQuestion(
-      topic: 'Science: Energy',
-      instruction: 'Choose what gives us light and heat.',
-      prompt: 'What gives Earth light and heat?',
-      acceptedAnswers: ['the Sun'],
-      choices: ['the Sun', 'a pencil', 'a backpack', 'a rock'],
-    );
-  }
-
-  _ExamQuestion _scienceMatterQuestion() {
-    return const _ExamQuestion(
-      topic: 'Science: Matter',
-      instruction: 'Choose the state of matter for ice.',
-      prompt: 'Ice is water in which state?',
-      acceptedAnswers: ['solid'],
-      choices: ['solid', 'liquid', 'gas', 'cloud'],
-    );
-  }
-
-  _ExamQuestion _scienceSpaceQuestion() {
-    return const _ExamQuestion(
-      topic: 'Science: Space',
-      instruction: 'Choose what Earth travels around.',
-      prompt: 'Earth goes around the ___ .',
-      acceptedAnswers: ['Sun'],
-      choices: ['Sun', 'Moon', 'Mars', 'clouds'],
-    );
   }
 
   _ExamQuestion _additionQuestion() {
@@ -1019,44 +967,17 @@ class _ExamGameState extends State<ExamGame> {
   }
 
   Future<void> saveScore() async {
-    if (_isSavingScore) return;
-    _isSavingScore = true;
-
-    try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) return;
-
-      final firestore = FirebaseFirestore.instance;
-      final userRef = firestore.collection('users').doc(user.uid);
-      final highscoreKey = '${_difficultyName.toLowerCase()}_exam_highscore';
-
+    await _saveGate.run(() async {
       _attemptsLogged += 1;
-      await GameLogger.logGame(
+      await saveGameResult(
         gameName: _gameName,
         score: score,
+        level: level,
         difficulty: gameDifficultyModeLabel(_selectedMode),
-        extraHighscoreFields: {highscoreKey: score},
+        storageKey: '${_difficultyName.toLowerCase()}_exam',
       );
-
-      await userRef.set({
-        '${_difficultyName.toLowerCase()}_exam_last_score': score,
-        '${_difficultyName.toLowerCase()}_exam_last_level': level,
-        '${_difficultyName.toLowerCase()}_exam_last_played': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
-
-      if (score > 0) {
-        await updateLeaderboardEntry(
-          gameName: _gameName,
-          newScore: score,
-          difficulty: gameDifficultyModeLabel(_selectedMode),
-        );
-      }
       await _saveSessionSnapshot();
-    } catch (error) {
-      debugPrint('Error in saveScore ($_gameName): $error');
-    } finally {
-      _isSavingScore = false;
-    }
+    });
   }
 
   Future<void> _onBackPressed() async {
@@ -1075,6 +996,22 @@ class _ExamGameState extends State<ExamGame> {
 
   @override
   Widget build(BuildContext context) {
+    // The screen drives every exit through _onBackPressed: it confirms, logs the
+    // leave attempt, and saves the score. The Android hardware/gesture back
+    // popped the route directly and skipped all three - no confirmation, no
+    // score, and no proctoring record. `canPop: false` routes that gesture
+    // into the same handler the on-screen arrow uses.
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (bool didPop, Object? result) {
+        if (didPop) return;
+        _onBackPressed();
+      },
+      child: _buildGameScreen(context),
+    );
+  }
+
+  Widget _buildGameScreen(BuildContext context) {
     return Theme(
       data: _buildTheme(context),
       child: AppBrightnessOverlay(
@@ -1160,32 +1097,7 @@ class _ExamGameState extends State<ExamGame> {
   }
 
   ThemeData _buildTheme(BuildContext context) {
-    final base = Theme.of(context);
-    return base.copyWith(
-      scaffoldBackgroundColor: Colors.transparent,
-      appBarTheme: const AppBarTheme(
-        backgroundColor: _inkColor,
-        foregroundColor: Colors.white,
-        centerTitle: true,
-        elevation: 0,
-      ),
-      textTheme: base.textTheme.apply(bodyColor: _inkColor, displayColor: _inkColor),
-      colorScheme: base.colorScheme.copyWith(
-        primary: _accentColor,
-        secondary: _accentColor,
-        surface: _panelColor,
-      ),
-      elevatedButtonTheme: ElevatedButtonThemeData(
-        style: ElevatedButton.styleFrom(
-          backgroundColor: _accentColor,
-          foregroundColor: Colors.white,
-          minimumSize: const Size.fromHeight(54),
-          textStyle: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-          elevation: 0,
-        ),
-      ),
-    );
+    return buildGameTheme(context, ink: _inkColor, accent: _accentColor);
   }
 
   Widget _buildBackground({required Widget child}) {
@@ -1221,22 +1133,11 @@ class _ExamGameState extends State<ExamGame> {
     required Widget child,
     EdgeInsetsGeometry padding = const EdgeInsets.all(18),
   }) {
-    return Container(
-      width: double.infinity,
-      padding: padding,
-      decoration: BoxDecoration(
-        color: _panelColor,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: _inkColor, width: 2.2),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x332C3550),
-            offset: Offset(5, 6),
-            blurRadius: 0,
-          ),
-        ],
-      ),
+    return gameCard(
       child: child,
+      panel: _panelColor,
+      ink: _inkColor,
+      padding: padding,
     );
   }
 
@@ -1433,7 +1334,10 @@ class _ExamGameState extends State<ExamGame> {
                 children: [
                   Text('Score: $score', style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900)),
                   Text('Level: $level', style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900)),
-                  HeartsDisplay(hearts: hearts),
+                  HeartsDisplay(
+          hearts: hearts,
+          maxHearts: gameDifficultyModeHearts(_selectedMode),
+        ),
                 ],
               ),
             ),

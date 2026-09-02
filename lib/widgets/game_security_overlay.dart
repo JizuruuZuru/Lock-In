@@ -115,18 +115,50 @@ class _GameSecurityOverlayState extends State<GameSecurityOverlay>
       return;
     }
 
-    final status = await _faceProctor.start(
-      absenceThreshold: widget.faceAbsenceThreshold,
-      onViolation: (event) {
-        unawaited(_handleFaceViolation(event));
-      },
-    );
+    // Claimed *before* the await, not after.
+    //
+    // `start()` takes hundreds of milliseconds on mobile - a permission
+    // prompt, `availableCameras()`, `CameraController.initialize()`, then
+    // `startImageStream`. `_isProctorRunning` used to be set only once all of
+    // that had finished, so a player leaving during that window hit two
+    // problems at once: `dispose()` called `_stopFaceProctor()`, which saw the
+    // flag still false and returned without doing anything; and then `start()`
+    // completed and bailed at the `!mounted` check below without stopping what
+    // it had just started. The front camera and the ML Kit detector stayed
+    // live for the rest of the process.
+    //
+    // Setting it here also makes a second concurrent `start()` impossible,
+    // which used to build two CameraControllers and orphan the first.
+    _isProctorRunning = true;
 
-    if (!mounted) return;
+    final FaceProctorStartStatus status;
+    try {
+      status = await _faceProctor.start(
+        absenceThreshold: widget.faceAbsenceThreshold,
+        onViolation: (event) {
+          unawaited(_handleFaceViolation(event));
+        },
+      );
+    } catch (_) {
+      _isProctorRunning = false;
+      rethrow;
+    }
+
+    if (!mounted) {
+      // Unmounted mid-start. Nothing else will ever stop this, so do it here.
+      await _faceProctor.stop();
+      _isProctorRunning = false;
+      return;
+    }
+
+    // Anything other than a clean start left no camera running, so release the
+    // claim before reporting the problem.
+    if (status != FaceProctorStartStatus.started) {
+      _isProctorRunning = false;
+    }
 
     switch (status) {
       case FaceProctorStartStatus.started:
-        _isProctorRunning = true;
         return;
       case FaceProctorStartStatus.unsupportedPlatform:
         // Same behavior as Math Game: web/desktop can continue, while Android

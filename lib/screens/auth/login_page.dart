@@ -5,6 +5,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'register_page.dart';
 import '../../app_gate.dart';
 import '../../services/sound_service.dart';
+import '../../utils/game_theme.dart';
+import '../../utils/auth_theme.dart';
+import '../../utils/auth_error_message.dart';
 import '../../utils/name_credential.dart';
 import '../../widgets/animated_shape_background.dart';
 import '../../widgets/error_dialog.dart';
@@ -80,7 +83,7 @@ class _LoginPageState extends State<LoginPage> {
   Future<void> login() async {
     final firstName = _firstNameController.text.trim();
     final lastName = _lastNameController.text.trim();
-    final password = _passwordController.text.trim();
+    final password = normalizePassword(_passwordController.text);
 
     if (firstName.isEmpty || lastName.isEmpty || password.isEmpty) {
       await _showErrorDialog('Enter your first name, last name, and password.');
@@ -110,22 +113,46 @@ class _LoginPageState extends State<LoginPage> {
           return;
         }
 
-        final fullName = '$firstName $lastName'.trim();
-        await user.updateDisplayName(fullName);
-        await userRef.set({
+        // Signing in must not rewrite the player's identity. The Firebase
+        // credential email is fixed at creation, so a student an admin renamed
+        // still signs in under the *old* name - and writing these fields back
+        // from the login box silently reverted the admin's edit on the very
+        // next sign-in. Only session bookkeeping is written here; names are
+        // owned by the account editor and by registration.
+        final sessionFields = <String, dynamic>{
           'uid': user.uid,
-          'firstName': firstName,
-          'lastName': lastName,
-          'fullName': fullName,
-          'username': fullName,
-          'loginId': buildNameLoginId(firstName: firstName, lastName: lastName),
           'loginEmail': _loginEmail,
           'email': _loginEmail,
           'isAnonymous': false,
           'authProvider': 'email',
           'lastLoginAt': FieldValue.serverTimestamp(),
           'updatedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
+        };
+
+        if (!existing.exists) {
+          // No profile yet - this is the one case where the typed name is the
+          // only name there is, so seed it.
+          final typedFullName = '$firstName $lastName'.trim();
+          sessionFields.addAll({
+            'firstName': firstName,
+            'lastName': lastName,
+            'fullName': typedFullName,
+            'username': typedFullName,
+            'loginId':
+                buildNameLoginId(firstName: firstName, lastName: lastName),
+          });
+        }
+
+        await userRef.set(sessionFields, SetOptions(merge: true));
+
+        // Keep the Firebase display name in step with the stored profile
+        // rather than with what was typed into the login box.
+        final storedFullName =
+            (existing.data()?['fullName'] as String?)?.trim();
+        final displayName = (storedFullName != null && storedFullName.isNotEmpty)
+            ? storedFullName
+            : '$firstName $lastName'.trim();
+        await user.updateDisplayName(displayName);
       }
 
       if (!mounted) return;
@@ -138,15 +165,14 @@ class _LoginPageState extends State<LoginPage> {
       );
     } on FirebaseAuthException catch (e) {
       if (!mounted) return;
-      final message = switch (e.code) {
-        'user-not-found' || 'invalid-credential' || 'wrong-password' =>
-          'No account matched that name and password. Create an account first or check your spelling.',
-        _ => e.message ?? 'Unknown error',
-      };
-      await _showErrorDialog(message);
+      await _showErrorDialog(
+        authErrorMessage(e, fallback: 'Could not sign you in. Please try again.'),
+      );
     } catch (e) {
       if (!mounted) return;
-      await _showErrorDialog('Error: $e');
+      await _showErrorDialog(
+        'Something went wrong while signing you in. Please try again.',
+      );
     } finally {
       if (mounted) {
         setState(() => _loading = false);
@@ -155,54 +181,7 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   ThemeData _buildTheme(BuildContext context) {
-    final base = Theme.of(context);
-    return base.copyWith(
-      scaffoldBackgroundColor: Colors.transparent,
-      appBarTheme: const AppBarTheme(
-        backgroundColor: _inkColor,
-        foregroundColor: Colors.white,
-        centerTitle: true,
-        elevation: 0,
-      ),
-      textTheme: base.textTheme.apply(
-        bodyColor: _inkColor,
-        displayColor: _inkColor,
-      ),
-      inputDecorationTheme: InputDecorationTheme(
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: _inkColor, width: 2),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: _inkColor, width: 2),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: _accentColor, width: 2),
-        ),
-        filled: true,
-        fillColor: _panelColor,
-        labelStyle: const TextStyle(color: _inkColor),
-      ),
-      elevatedButtonTheme: ElevatedButtonThemeData(
-        style: ElevatedButton.styleFrom(
-          backgroundColor: _accentColor,
-          foregroundColor: Colors.white,
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-          textStyle: const TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 0.5,
-          ),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
-            side: const BorderSide(color: _inkColor, width: 2),
-          ),
-          elevation: 0,
-        ),
-      ),
-    );
+    return buildAuthTheme(context, ink: _inkColor, accent: _accentColor, panel: _panelColor);
   }
 
   Widget _buildBackground({required Widget child}) {
@@ -248,23 +227,7 @@ class _LoginPageState extends State<LoginPage> {
     required Widget child,
     EdgeInsetsGeometry padding = const EdgeInsets.all(24),
   }) {
-    return Container(
-      width: double.infinity,
-      padding: padding,
-      decoration: BoxDecoration(
-        color: _panelColor,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: _inkColor, width: 2.2),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x332C3550),
-            offset: Offset(5, 6),
-            blurRadius: 0,
-          ),
-        ],
-      ),
-      child: child,
-    );
+    return gameCard(child: child, panel: _panelColor, ink: _inkColor, padding: padding);
   }
 
   @override
@@ -386,7 +349,18 @@ class _LoginPageState extends State<LoginPage> {
                                   builder: (_) => const RegisterScreen(),
                                 ),
                               );
-                              if (result == true && mounted) {
+                              // Registering succeeds and signs the player in,
+                              // so leaving them looking at the login form was
+                              // a dead end. Hand off to the gate, exactly as a
+                              // successful sign-in above does.
+                              if (result == true && context.mounted) {
+                                Navigator.pushAndRemoveUntil(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => const AppGate(),
+                                  ),
+                                  (route) => false,
+                                );
                               }
                             },
                             child: const Text(

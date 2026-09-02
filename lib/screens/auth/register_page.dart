@@ -3,6 +3,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../services/sound_service.dart';
+import '../../utils/game_theme.dart';
+import '../../utils/auth_theme.dart';
+import '../../utils/auth_error_message.dart';
 import '../../utils/name_credential.dart';
 import '../../widgets/animated_shape_background.dart';
 import '../../widgets/error_dialog.dart';
@@ -126,8 +129,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
     final firstName = _firstName;
     final lastName = _lastName;
     final fullName = _fullName;
-    final password = _passwordController.text;
-    final confirm = _confirmController.text;
+    final password = normalizePassword(_passwordController.text);
+    final confirm = normalizePassword(_confirmController.text);
 
     if (firstName.isEmpty || lastName.isEmpty) {
       await _showErrorDialog('Please enter your first name and last name first.');
@@ -212,17 +215,19 @@ class _RegisterScreenState extends State<RegisterScreen> {
       _registeredSuccessfully = true;
     } on FirebaseAuthException catch (e) {
       if (!mounted) return;
+      // These two keep the register screen's own wording; everything else
+      // falls through to the shared kid-safe mapper.
       final message = switch (e.code) {
         'email-already-in-use' || 'credential-already-in-use' =>
           'An account already exists for $_fullName. Please login using your first name, last name, and password.',
-        'invalid-email' => 'The generated name credential is invalid. Please check the spelling of your first and last name.',
-        'weak-password' => 'Password is too weak. Please use a stronger password.',
-        _ => e.message ?? 'Registration failed.',
+        _ => authErrorMessage(e, fallback: 'Could not create your account. Please try again.'),
       };
       await _showErrorDialog(message);
     } catch (e) {
       if (!mounted) return;
-      await _showErrorDialog('Error: $e');
+      await _showErrorDialog(
+        'Something went wrong while creating your account. Please try again.',
+      );
     } finally {
       if (mounted) {
         setState(() => _loading = false);
@@ -234,54 +239,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }
 
   ThemeData _buildTheme(BuildContext context) {
-    final base = Theme.of(context);
-    return base.copyWith(
-      scaffoldBackgroundColor: Colors.transparent,
-      appBarTheme: const AppBarTheme(
-        backgroundColor: _inkColor,
-        foregroundColor: Colors.white,
-        centerTitle: true,
-        elevation: 0,
-      ),
-      textTheme: base.textTheme.apply(
-        bodyColor: _inkColor,
-        displayColor: _inkColor,
-      ),
-      inputDecorationTheme: InputDecorationTheme(
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: _inkColor, width: 2),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: _inkColor, width: 2),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: _accentColor, width: 2),
-        ),
-        filled: true,
-        fillColor: _panelColor,
-        labelStyle: const TextStyle(color: _inkColor),
-      ),
-      elevatedButtonTheme: ElevatedButtonThemeData(
-        style: ElevatedButton.styleFrom(
-          backgroundColor: _accentColor,
-          foregroundColor: Colors.white,
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-          textStyle: const TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 0.5,
-          ),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
-            side: const BorderSide(color: _inkColor, width: 2),
-          ),
-          elevation: 0,
-        ),
-      ),
-    );
+    return buildAuthTheme(context, ink: _inkColor, accent: _accentColor, panel: _panelColor);
   }
 
   Widget _buildBackground({required Widget child}) {
@@ -327,23 +285,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     required Widget child,
     EdgeInsetsGeometry padding = const EdgeInsets.all(24),
   }) {
-    return Container(
-      width: double.infinity,
-      padding: padding,
-      decoration: BoxDecoration(
-        color: _panelColor,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: _inkColor, width: 2.2),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x332C3550),
-            offset: Offset(5, 6),
-            blurRadius: 0,
-          ),
-        ],
-      ),
-      child: child,
-    );
+    return gameCard(child: child, panel: _panelColor, ink: _inkColor, padding: padding);
   }
 
   Widget _credentialPreview() {

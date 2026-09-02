@@ -41,6 +41,12 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
   late final Stream<List<AppUserRecord>> _accountStream =
       _accounts.watchAccounts();
 
+  /// Held in state for the same reason as the streams above. Built inside
+  /// `build()` this re-read `users/{uid}` on every rebuild - and the four
+  /// `ValueListenableBuilder`s plus both stat streams rebuild this page often.
+  late final Future<AppUserRecord?> _currentAccount =
+      _accounts.fetchCurrentAccount();
+
   @override
   void initState() {
     super.initState();
@@ -58,6 +64,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
     if (!confirmed || !mounted) return;
 
     resetPlayerNameCache();
+    await CustomQuestionSync.instance.stop();
     await FirebaseAuth.instance.signOut();
     if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
@@ -79,7 +86,10 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
     return AdminScaffold(
       title: 'Admin Panel',
       subtitle: 'Questions, accounts, and API imports',
-      showBackButton: false,
+      // An admin reaching this from the game has a route underneath, and
+      // hardcoding this to false left them with no visible way back - only the
+      // OS gesture, or Sign out, which tears the whole stack down.
+      showBackButton: Navigator.of(context).canPop(),
       actions: [
         IconButton(
           tooltip: 'Sign out',
@@ -113,8 +123,10 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
 
   Widget _welcomeCard() {
     return FutureBuilder<AppUserRecord?>(
-      future: _accounts.fetchCurrentAccount(),
+      future: _currentAccount,
       builder: (context, snapshot) {
+        // Falls back to "Admin" while loading and if the read fails - the
+        // dashboard is still usable either way, so this never blocks the page.
         final name = snapshot.data?.displayName ?? 'Admin';
         return AdminPanel(
           child: Row(
@@ -178,7 +190,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
               valueListenable: sync.loadedCount,
               builder: (context, count, ___) {
                 final isLive = state == QuestionSourceState.live;
-                final color = isLive ? AdminPalette.success : const Color(0xFFEF6C00);
+                final color = isLive ? AdminPalette.success : AdminPalette.warning;
 
                 return AdminPanel(
                   borderColor: color,
@@ -284,7 +296,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
             label: 'From API',
             value: imported?.toString(),
             caption: 'Open Trivia DB imports',
-            color: const Color(0xFFEF6C00),
+            color: AdminPalette.warning,
             hasError: snapshot.hasError,
           );
         },
@@ -335,7 +347,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
         title: 'Import from Open Trivia DB',
         description:
             'Pull ready-made multiple-choice questions over HTTP, preview them, and publish the ones you want into your question bank.',
-        color: const Color(0xFFEF6C00),
+        color: AdminPalette.warning,
         onTap: () => _open(const TriviaImportPage()),
       ),
       _ActionTile(
@@ -345,7 +357,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
             'Check the app can reach the internet services it needs, and that '
             'questions can be saved, edited, searched, and deleted. Safe to run '
             'any time - it cleans up after itself.',
-        color: const Color(0xFF1976D2),
+        color: AdminPalette.info,
         onTap: () => _open(const ApiConsolePage()),
       ),
     ];

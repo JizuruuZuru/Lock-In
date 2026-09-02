@@ -2,6 +2,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../../models/app_user_record.dart';
+import '../../widgets/decorative_gif.dart';
+
 import '../../services/sound_service.dart';
 import '../../widgets/animated_shape_background.dart';
 
@@ -116,8 +119,16 @@ class _PlayerOnboardingPageState extends State<PlayerOnboardingPage> {
 
   Future<void> _saveAgeAndContinue() async {
     final age = int.tryParse(_ageController.text.trim());
-    if (age == null || age < 3 || age > 120) {
-      setState(() => _errorText = 'Please enter a valid age.');
+    // Uses the record's own bounds rather than a second, wider pair. Onboarding
+    // used to accept 3-120 while AppUserRecord requires 4-100, so a
+    // self-onboarded 3-year-old was written to Firestore and then failed
+    // validation on every later admin edit - the teacher could not save any
+    // change until they also corrected the age.
+    if (age == null ||
+        age < AppUserRecord.minAge ||
+        age > AppUserRecord.maxAge) {
+      setState(() => _errorText =
+          'Please enter an age between ${AppUserRecord.minAge} and ${AppUserRecord.maxAge}.');
       return;
     }
 
@@ -445,10 +456,10 @@ class _PlayerOnboardingPageState extends State<PlayerOnboardingPage> {
             ),
             child: ClipRRect(
               borderRadius: BorderRadius.circular((gifSize * 0.09).clamp(22.0, 38.0)),
-              child: Image.asset(
-                assetPath,
+              child: DecorativeGif(
+                assetPath: assetPath,
+                displayWidth: gifSize,
                 fit: BoxFit.contain,
-                gaplessPlayback: true,
               ),
             ),
           ),

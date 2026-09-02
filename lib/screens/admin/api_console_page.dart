@@ -8,6 +8,7 @@ import '../../services/api/dictionary_api.dart';
 import '../../services/api/firestore_rest_api.dart';
 import '../../services/api/open_trivia_api.dart';
 import '../../utils/admin_theme.dart';
+import '../../utils/responsive_layout.dart';
 import '../../widgets/offline_banner.dart';
 import '../../widgets/source_link.dart';
 
@@ -114,6 +115,11 @@ class _ApiConsolePageState extends State<ApiConsolePage> {
     String purpose = '',
     bool failureExpected = false,
   }) async {
+    // Guarded like the two `setState`s further down. `_runAll` walks eight
+    // steps back to back, and `dispose()` closes the three HTTP clients - so
+    // backing out mid-run makes the in-flight request throw, the current step
+    // return early, and the next step land here on a dead State.
+    if (!mounted) return null;
     setState(() => _currentStep = label);
     final watch = Stopwatch()..start();
 
@@ -159,6 +165,22 @@ class _ApiConsolePageState extends State<ApiConsolePage> {
       });
       return null;
     }
+  }
+
+  /// Confirms before [_runAll], which writes a real document to the live
+  /// `quiz_questions` collection (unpublished, and deleted again at step 7).
+  Future<void> _confirmAndRunAll() async {
+    final confirmed = await confirmAdminAction(
+      context,
+      title: 'Run the API check?',
+      message:
+          'This makes real calls to the live database: it creates one test '
+          'question, edits it, searches for it, then deletes it. The test '
+          'question is never published, so students cannot see it.',
+      confirmLabel: 'Run the check',
+    );
+    if (!confirmed || !mounted) return;
+    await _runAll();
   }
 
   Future<void> _runAll() async {
@@ -354,9 +376,9 @@ class _ApiConsolePageState extends State<ApiConsolePage> {
     }
 
     Clipboard.setData(ClipboardData(text: buffer.toString()));
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Full API log copied to the clipboard.')),
-    );
+    // Was a raw ScaffoldMessenger call, so it stacked instead of replacing the
+    // previous snack and missed the shared icon/duration treatment.
+    showAdminSnack(context, 'Full API log copied to the clipboard.');
   }
 
   @override
@@ -383,9 +405,23 @@ class _ApiConsolePageState extends State<ApiConsolePage> {
                 'The API console makes live HTTP calls, so it needs a connection.',
           ),
           Expanded(
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
-              children: [
+            // This was the one admin page with no width cap, so on a wide
+            // monitor every card and JSON block stretched the full screen.
+            // Matches what the other pages do with responsivePanelMaxWidth.
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: responsivePanelMaxWidth(
+                    MediaQuery.sizeOf(context).width,
+                  ),
+                ),
+                child: Builder(builder: (context) {
+                  final pad =
+                      responsiveCardPadding(MediaQuery.sizeOf(context).width);
+                  return ListView(
+                    padding: EdgeInsets.fromLTRB(pad, 16, pad, 32),
+                    children: [
                 _intro(),
                 const SizedBox(height: 14),
                 _runBar(passed, failed),
@@ -413,6 +449,9 @@ class _ApiConsolePageState extends State<ApiConsolePage> {
                     ),
                   ),
               ],
+                  );
+                }),
+              ),
             ),
           ),
         ],
@@ -450,18 +489,22 @@ class _ApiConsolePageState extends State<ApiConsolePage> {
           ),
           const _PlainStep(
             number: 4,
-            text: 'Edit that question, then change its published setting.',
+            text: 'Edit that question.',
           ),
           const _PlainStep(
             number: 5,
-            text: 'Search the question bank and read the matches back.',
+            text: 'Change only its published setting, leaving the rest alone.',
           ),
           const _PlainStep(
             number: 6,
-            text: 'Delete the test question so nothing is left behind.',
+            text: 'Search the question bank and read the matches back.',
           ),
           const _PlainStep(
             number: 7,
+            text: 'Delete the test question so nothing is left behind.',
+          ),
+          const _PlainStep(
+            number: 8,
             text: 'Deliberately ask for something that does not exist, to '
                 'check the app handles mistakes without crashing.',
           ),
@@ -561,9 +604,9 @@ class _ApiConsolePageState extends State<ApiConsolePage> {
 
   Color _methodColor(String method) {
     return switch (method) {
-      'GET' => const Color(0xFF1976D2),
+      'GET' => AdminPalette.info,
       'POST' => AdminPalette.success,
-      'PATCH' => const Color(0xFFEF6C00),
+      'PATCH' => AdminPalette.warning,
       'DELETE' => AdminPalette.danger,
       _ => AdminPalette.muted,
     };
@@ -571,6 +614,16 @@ class _ApiConsolePageState extends State<ApiConsolePage> {
 
   Widget _methodBadge(String method) {
     final color = _methodColor(method);
+    // Reads as "HTTP method GET" rather than the bare letters, which a screen
+    // reader would otherwise spell out with no context.
+    return Semantics(
+      label: 'HTTP method $method',
+      excludeSemantics: true,
+      child: _methodBadgeBody(method, color),
+    );
+  }
+
+  Widget _methodBadgeBody(String method, Color color) {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 4),
       alignment: Alignment.center,
@@ -598,7 +651,7 @@ class _ApiConsolePageState extends State<ApiConsolePage> {
           SizedBox(
             width: double.infinity,
             child: ElevatedButton.icon(
-              onPressed: _running ? null : _runAll,
+              onPressed: _running ? null : _confirmAndRunAll,
               icon: _running
                   ? const SizedBox(
                       width: 18,
@@ -688,7 +741,7 @@ class _ApiConsolePageState extends State<ApiConsolePage> {
     final problem = result.isProblem;
     final color = problem
         ? AdminPalette.danger
-        : (result.failureExpected ? const Color(0xFF6B6382) : AdminPalette.success);
+        : (result.failureExpected ? AdminPalette.muted : AdminPalette.success);
 
     final status = problem
         ? 'Did not work'
@@ -816,14 +869,17 @@ class _ApiConsolePageState extends State<ApiConsolePage> {
               ),
               const Spacer(),
               IconButton(
-                iconSize: 16,
-                visualDensity: VisualDensity.compact,
-                tooltip: 'Copy',
+                iconSize: 18,
+                // `VisualDensity.compact` took this to roughly 40x40, under
+                // the 48dp minimum touch target.
+                constraints: const BoxConstraints(
+                  minWidth: 48,
+                  minHeight: 48,
+                ),
+                tooltip: 'Copy $label',
                 onPressed: () {
                   Clipboard.setData(ClipboardData(text: content));
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('$label copied.')),
-                  );
+                  showAdminSnack(context, '$label copied.');
                 },
                 icon: const Icon(Icons.copy_rounded),
               ),
@@ -833,7 +889,7 @@ class _ApiConsolePageState extends State<ApiConsolePage> {
             width: double.infinity,
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: const Color(0xFF11121A),
+              color: AdminPalette.codeBg,
               borderRadius: BorderRadius.circular(12),
             ),
             child: SingleChildScrollView(
@@ -844,7 +900,7 @@ class _ApiConsolePageState extends State<ApiConsolePage> {
                   fontFamily: 'monospace',
                   fontSize: 11.5,
                   height: 1.45,
-                  color: Color(0xFFD7E3FF),
+                  color: AdminPalette.codeFg,
                 ),
               ),
             ),

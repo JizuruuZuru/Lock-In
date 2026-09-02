@@ -77,29 +77,13 @@ Future<void> updateLeaderboardEntry({
   final docId = '${user.uid}_$safeGameId';
   final docRef = firestore.collection('leaderboard_entries').doc(docId);
 
-  await firestore.runTransaction((transaction) async {
-    final snapshot = await transaction.get(docRef);
-    if (snapshot.exists) {
-      final data = snapshot.data();
-      final existingScore = data?['score'];
-      final scoreToBeat = existingScore is num ? existingScore.toInt() : 0;
-      if (newScore <= scoreToBeat) {
-        transaction.set(
-          docRef,
-          {
-            'username': playerName,
-            'fullName': playerName,
-            'lastSeenAt': FieldValue.serverTimestamp(),
-          },
-          SetOptions(merge: true),
-        );
-        return;
-      }
-    }
+  Map<String, dynamic> touchOnly() => {
+        'username': playerName,
+        'fullName': playerName,
+        'lastSeenAt': FieldValue.serverTimestamp(),
+      };
 
-    transaction.set(
-      docRef,
-      {
+  Map<String, dynamic> fullEntry() => {
         'userId': user.uid,
         'username': playerName,
         'fullName': playerName,
@@ -109,8 +93,45 @@ Future<void> updateLeaderboardEntry({
         if (difficulty != null) 'difficulty': difficulty,
         'timestamp': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
-      },
+      };
+
+  int scoreIn(Map<String, dynamic>? data) {
+    final existing = data?['score'];
+    return existing is num ? existing.toInt() : 0;
+  }
+
+  try {
+    await firestore.runTransaction((transaction) async {
+      final snapshot = await transaction.get(docRef);
+      if (snapshot.exists && newScore <= scoreIn(snapshot.data())) {
+        transaction.set(docRef, touchOnly(), SetOptions(merge: true));
+        return;
+      }
+
+      transaction.set(docRef, fullEntry(), SetOptions(merge: true));
+    });
+  } on FirebaseException catch (error) {
+    // A transaction needs the server, so offline it cannot complete - and
+    // unlike a plain write it is not queued, so the score was simply lost.
+    // GameLogger.logGame already solved this for the other half of the same
+    // game-over path; this is the matching fallback. The read comes from the
+    // local cache and the write is queued until the device reconnects. Not
+    // atomic, but nothing concurrent can reach the document with no network.
+    if (error.code != 'unavailable' && error.code != 'deadline-exceeded') {
+      rethrow;
+    }
+
+    Map<String, dynamic>? cached;
+    try {
+      cached = (await docRef.get()).data();
+    } catch (_) {
+      cached = null;
+    }
+
+    final beatsStored = cached == null || newScore > scoreIn(cached);
+    await docRef.set(
+      beatsStored ? fullEntry() : touchOnly(),
       SetOptions(merge: true),
     );
-  });
+  }
 }

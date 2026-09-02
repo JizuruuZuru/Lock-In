@@ -164,6 +164,22 @@ class QuestionRepository {
     return _mapAndSort(snapshot);
   }
 
+  /// [fetchPublished], but it also says whether Firestore actually reached the
+  /// server or quietly served its local cache.
+  ///
+  /// A plain `.get()` succeeds offline by falling back to the cache, so a
+  /// caller that only sees the records cannot tell a real refresh from a
+  /// replay - which is how the admin dashboard came to report "synced just
+  /// now" on a device with no connection.
+  Future<({List<QuizQuestionRecord> records, bool fromCache})>
+      fetchPublishedDetailed() async {
+    final snapshot = await _collection.where('published', isEqualTo: true).get();
+    return (
+      records: _mapAndSort(snapshot),
+      fromCache: snapshot.metadata.isFromCache,
+    );
+  }
+
   List<QuizQuestionRecord> _mapAndSort(QuerySnapshot<Map<String, dynamic>> snapshot) {
     final records = snapshot.docs.map(QuizQuestionRecord.fromSnapshot).toList();
     records.sort((a, b) {

@@ -19,6 +19,38 @@ class AdminPalette {
   static const Color success = Color(0xFF2E7D32);
   static const Color muted = Color(0xFF6B6382);
 
+  // The colours below were not in the palette, so the screens retyped them as
+  // raw literals - `warning` alone appeared eight times across four files.
+  // Two of them also failed WCAG AA against `panel` at the 11-12px sizes they
+  // are used at, so the values here are darkened from the originals:
+  //   warning  #EF6C00 -> #B54600  (2.9:1 -> 5.4:1)
+  //   info     #1976D2 -> #14559B  (4.4:1 -> 6.4:1)
+
+  /// Imported / needs-attention. Chips, stat cards, the PATCH method badge.
+  static const Color warning = Color(0xFFB54600);
+
+  /// Neutral information. The GET method badge, secondary stat cards.
+  static const Color info = Color(0xFF14559B);
+
+  /// Metadata chips - level, subject, and similar read-only tags.
+  static const Color teal = Color(0xFF00695C);
+
+  /// Secondary emphasis, a step down from [accent].
+  static const Color secondary = Color(0xFF5E35B1);
+
+  /// Background for a row that is disabled, unpublished, or otherwise inactive.
+  static const Color surfaceMuted = Color(0xFFF2F0F7);
+
+  /// The API console's code blocks, the one place the admin area inverts.
+  static const Color codeBg = Color(0xFF11121A);
+  static const Color codeFg = Color(0xFFD7E3FF);
+
+  /// The amber "read this before you save" callout: ground, border, and text.
+  /// Used by the account editor's password/login-id notice.
+  static const Color noticeBg = Color(0xFFFFF8E1);
+  static const Color noticeBorder = Color(0xFFE0A800);
+  static const Color noticeInk = Color(0xFF6B4A00);
+
   /// The app-wide hard-shadow signature: offset, zero blur.
   static const List<BoxShadow> hardShadow = [
     BoxShadow(color: Color(0x332C3550), offset: Offset(5, 6), blurRadius: 0),
@@ -141,16 +173,25 @@ class AdminScaffold extends StatelessWidget {
         backgroundColor: Colors.transparent,
         appBar: AppBar(
           automaticallyImplyLeading: showBackButton,
+          // Both lines are clamped. Unbounded, the longest subtitle (55
+          // characters at 12px) wrapped to a second line and pushed the column
+          // past the 56dp toolbar on a 360dp phone - overflow stripes across
+          // the header of the import screen.
           title: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
                 title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 19),
               ),
               if (subtitle != null)
                 Text(
                   subtitle!,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
                   style: const TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,

@@ -1,17 +1,16 @@
 import 'dart:async';
 import 'dart:math';
 
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../services/game_result_recorder.dart';
 import '../../services/game_logger.dart';
 import '../../services/face_proctor_contract.dart';
 import '../../services/face_proctor_service.dart';
-import '../../services/leaderboard_service.dart';
 import '../../services/leave_attempt_logger.dart';
 import '../../services/sound_service.dart';
+import '../../utils/game_theme.dart';
 import '../../utils/game_difficulty_mode.dart';
 import '../../utils/responsive_layout.dart';
 import '../../widgets/animated_shape_background.dart';
@@ -174,7 +173,7 @@ class _FractionsGameState extends State<FractionsGame> {
   bool showCorrectSplash = false;
   bool showIncorrectSplash = false;
   bool _showExitConfirmation = false;
-  bool _isSavingScore = false;
+  final GameSaveGate _saveGate = GameSaveGate();
 
   int score = 0;
   int _levelPoints = 0;
@@ -203,7 +202,7 @@ class _FractionsGameState extends State<FractionsGame> {
 
   @override
   void dispose() {
-    GameLogger.endSession();
+    GameLogger.endSession(_gameName);
     SoundService().playPageBgm(BgmPage.home);
     super.dispose();
   }
@@ -216,7 +215,6 @@ class _FractionsGameState extends State<FractionsGame> {
       showCorrectSplash = false;
       showIncorrectSplash = false;
       _showExitConfirmation = false;
-      _isSavingScore = false;
       score = 0;
       _levelPoints = 0;
       level = 1;
@@ -950,41 +948,15 @@ class _FractionsGameState extends State<FractionsGame> {
   }
 
   Future<void> saveScore() async {
-    if (_isSavingScore) return;
-    _isSavingScore = true;
-
-    try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) return;
-
-      final firestore = FirebaseFirestore.instance;
-      final userRef = firestore.collection('users').doc(user.uid);
-
-      await GameLogger.logGame(
+    await _saveGate.run(() async {
+      await saveGameResult(
         gameName: _gameName,
         score: score,
+        level: level,
         difficulty: gameDifficultyModeLabel(_selectedMode),
-        extraHighscoreFields: {'fractions_highscore': score},
+        storageKey: 'fractions',
       );
-
-      await userRef.set({
-        'fractions_last_score': score,
-        'fractions_last_level': level,
-        'fractions_last_played': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
-
-      if (score > 0) {
-        await updateLeaderboardEntry(
-          gameName: _gameName,
-          newScore: score,
-          difficulty: gameDifficultyModeLabel(_selectedMode),
-        );
-      }
-    } catch (error) {
-      debugPrint('Error in saveScore (Fractions): $error');
-    } finally {
-      _isSavingScore = false;
-    }
+    });
   }
 
   Future<void> _onBackPressed() async {
@@ -1003,6 +975,22 @@ class _FractionsGameState extends State<FractionsGame> {
 
   @override
   Widget build(BuildContext context) {
+    // The screen drives every exit through _onBackPressed: it confirms, logs the
+    // leave attempt, and saves the score. The Android hardware/gesture back
+    // popped the route directly and skipped all three - no confirmation, no
+    // score, and no proctoring record. `canPop: false` routes that gesture
+    // into the same handler the on-screen arrow uses.
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (bool didPop, Object? result) {
+        if (didPop) return;
+        _onBackPressed();
+      },
+      child: _buildGameScreen(context),
+    );
+  }
+
+  Widget _buildGameScreen(BuildContext context) {
     return Theme(
       data: _buildTheme(context),
       child: AppBrightnessOverlay(
@@ -1088,46 +1076,7 @@ class _FractionsGameState extends State<FractionsGame> {
   }
 
   ThemeData _buildTheme(BuildContext context) {
-    final base = Theme.of(context);
-    return base.copyWith(
-      scaffoldBackgroundColor: Colors.transparent,
-      appBarTheme: const AppBarTheme(
-        backgroundColor: _inkColor,
-        foregroundColor: Colors.white,
-        centerTitle: true,
-        elevation: 0,
-      ),
-      textTheme: base.textTheme.apply(
-        bodyColor: _inkColor,
-        displayColor: _inkColor,
-      ),
-      elevatedButtonTheme: ElevatedButtonThemeData(
-        style: ElevatedButton.styleFrom(
-          backgroundColor: _accentColor,
-          foregroundColor: Colors.white,
-          minimumSize: const Size.fromHeight(52),
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-          textStyle: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 0.5,
-          ),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
-            side: const BorderSide(color: _inkColor, width: 2),
-          ),
-          elevation: 0,
-        ),
-      ),
-      textButtonTheme: TextButtonThemeData(
-        style: TextButton.styleFrom(
-          foregroundColor: _inkColor,
-          minimumSize: const Size.fromHeight(52),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-        ),
-      ),
-    );
+    return buildGameTheme(context, ink: _inkColor, accent: _accentColor);
   }
 
   Widget _buildBackground({required Widget child}) {
@@ -1194,22 +1143,11 @@ class _FractionsGameState extends State<FractionsGame> {
     required Widget child,
     EdgeInsetsGeometry padding = const EdgeInsets.all(18),
   }) {
-    return Container(
-      width: double.infinity,
-      padding: padding,
-      decoration: BoxDecoration(
-        color: _panelColor,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: _inkColor, width: 2.2),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x332C3550),
-            offset: Offset(5, 6),
-            blurRadius: 0,
-          ),
-        ],
-      ),
+    return gameCard(
       child: child,
+      panel: _panelColor,
+      ink: _inkColor,
+      padding: padding,
     );
   }
 
@@ -1348,7 +1286,10 @@ class _FractionsGameState extends State<FractionsGame> {
               ),
             ],
             const SizedBox(height: 8),
-            HeartsDisplay(hearts: hearts),
+            HeartsDisplay(
+          hearts: hearts,
+          maxHearts: gameDifficultyModeHearts(_selectedMode),
+        ),
             const SizedBox(height: 8),
             _card(
               padding: EdgeInsets.fromLTRB(

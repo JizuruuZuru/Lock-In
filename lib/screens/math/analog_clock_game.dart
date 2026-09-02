@@ -1,16 +1,15 @@
 import 'dart:async';
 import 'dart:math';
 
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../../services/game_result_recorder.dart';
 import '../../services/game_logger.dart';
 import '../../services/face_proctor_contract.dart';
 import '../../services/face_proctor_service.dart';
-import '../../services/leaderboard_service.dart';
 import '../../services/leave_attempt_logger.dart';
 import '../../services/sound_service.dart';
+import '../../utils/game_theme.dart';
 import '../../utils/game_difficulty_mode.dart';
 import '../../utils/responsive_layout.dart';
 import '../../widgets/animated_shape_background.dart';
@@ -51,7 +50,7 @@ class _AnalogClockGameState extends State<AnalogClockGame>
   bool isGameOver = false;
   bool showCorrectSplash = false;
   bool showIncorrectSplash = false;
-  bool _isSavingScore = false;
+  final GameSaveGate _saveGate = GameSaveGate();
   bool _showExitConfirmation = false;
 
   int score = 0;
@@ -77,7 +76,7 @@ class _AnalogClockGameState extends State<AnalogClockGame>
 
   @override
   void dispose() {
-    GameLogger.endSession();
+    GameLogger.endSession(_gameName);
     WidgetsBinding.instance.removeObserver(this);
     SoundService().playPageBgm(BgmPage.home);
     super.dispose();
@@ -100,7 +99,6 @@ class _AnalogClockGameState extends State<AnalogClockGame>
       streak = 0;
       input = '';
       timerKey = UniqueKey();
-      _isSavingScore = false;
     });
     _generateClockTime();
   }
@@ -419,43 +417,15 @@ class _AnalogClockGameState extends State<AnalogClockGame>
   }
 
   Future<void> saveScore() async {
-    if (_isSavingScore) return;
-    _isSavingScore = true;
-    try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) return;
-
-      await GameLogger.logGame(
+    await _saveGate.run(() async {
+      await saveGameResult(
         gameName: _gameName,
         score: score,
+        level: level,
         difficulty: gameDifficultyModeLabel(_selectedMode),
+        storageKey: 'analog_clock',
       );
-
-      final userRef = FirebaseFirestore.instance.collection('users').doc(user.uid);
-      final snapshot = await userRef.get();
-      final currentHighScore = snapshot.data()?['analog_clock_highscore'] ?? 0;
-      if (score > currentHighScore) {
-        await userRef.set({
-          'analog_clock_highscore': score,
-          'analog_clock_level': level,
-          'analog_clock_last_played': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
-      } else {
-        await userRef.set({
-          'analog_clock_last_played': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
-      }
-
-      await updateLeaderboardEntry(
-        gameName: _gameName,
-        newScore: score,
-        difficulty: gameDifficultyModeLabel(_selectedMode),
-      );
-    } catch (error) {
-      debugPrint('Error saving Analog Clock score: $error');
-    } finally {
-      _isSavingScore = false;
-    }
+    });
   }
 
 
@@ -474,43 +444,7 @@ class _AnalogClockGameState extends State<AnalogClockGame>
   }
 
   ThemeData _buildTheme(BuildContext context) {
-    final base = Theme.of(context);
-    return base.copyWith(
-      scaffoldBackgroundColor: Colors.transparent,
-      appBarTheme: const AppBarTheme(
-        backgroundColor: _inkColor,
-        foregroundColor: Colors.white,
-        centerTitle: true,
-        elevation: 0,
-      ),
-      textTheme: base.textTheme.apply(
-        bodyColor: _inkColor,
-        displayColor: _inkColor,
-      ),
-      elevatedButtonTheme: ElevatedButtonThemeData(
-        style: ElevatedButton.styleFrom(
-          backgroundColor: _accentColor,
-          foregroundColor: Colors.white,
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-          textStyle: const TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 0.5,
-          ),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
-            side: const BorderSide(color: _inkColor, width: 2),
-          ),
-          elevation: 0,
-        ),
-      ),
-      textButtonTheme: TextButtonThemeData(
-        style: TextButton.styleFrom(
-          foregroundColor: _inkColor,
-          textStyle: const TextStyle(fontWeight: FontWeight.w800),
-        ),
-      ),
-    );
+    return buildGameTheme(context, ink: _inkColor, accent: _accentColor);
   }
 
   Widget _buildBackground({required Widget child}) {
@@ -557,22 +491,11 @@ class _AnalogClockGameState extends State<AnalogClockGame>
     required Widget child,
     EdgeInsetsGeometry padding = const EdgeInsets.all(18),
   }) {
-    return Container(
-      width: double.infinity,
-      padding: padding,
-      decoration: BoxDecoration(
-        color: _panelColor,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: _inkColor, width: 2.2),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x332C3550),
-            offset: Offset(5, 6),
-            blurRadius: 0,
-          ),
-        ],
-      ),
+    return gameCard(
       child: child,
+      panel: _panelColor,
+      ink: _inkColor,
+      padding: padding,
     );
   }
 
@@ -759,7 +682,10 @@ class _AnalogClockGameState extends State<AnalogClockGame>
           ),
         ),
         const SizedBox(height: 12),
-        HeartsDisplay(hearts: hearts),
+        HeartsDisplay(
+          hearts: hearts,
+          maxHearts: gameDifficultyModeHearts(_selectedMode),
+        ),
         const SizedBox(height: 12),
         Expanded(
           flex: 5,
@@ -830,6 +756,22 @@ class _AnalogClockGameState extends State<AnalogClockGame>
 
   @override
   Widget build(BuildContext context) {
+    // The screen drives every exit through _onBackPressed: it confirms, logs the
+    // leave attempt, and saves the score. The Android hardware/gesture back
+    // popped the route directly and skipped all three - no confirmation, no
+    // score, and no proctoring record. `canPop: false` routes that gesture
+    // into the same handler the on-screen arrow uses.
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (bool didPop, Object? result) {
+        if (didPop) return;
+        _onBackPressed();
+      },
+      child: _buildGameScreen(context),
+    );
+  }
+
+  Widget _buildGameScreen(BuildContext context) {
     return Theme(
       data: _buildTheme(context),
       child: AppBrightnessOverlay(

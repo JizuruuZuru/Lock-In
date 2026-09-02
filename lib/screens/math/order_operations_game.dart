@@ -1,16 +1,15 @@
 import 'dart:async';
 import 'dart:math';
 
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../../services/game_result_recorder.dart';
 import '../../services/game_logger.dart';
 import '../../services/face_proctor_contract.dart';
 import '../../services/face_proctor_service.dart';
-import '../../services/leaderboard_service.dart';
 import '../../services/leave_attempt_logger.dart';
 import '../../services/sound_service.dart';
+import '../../utils/game_theme.dart';
 import '../../utils/game_difficulty_mode.dart';
 import '../../utils/responsive_layout.dart';
 import '../../widgets/animated_shape_background.dart';
@@ -62,7 +61,7 @@ class _OrderOperationsGameState extends State<OrderOperationsGame> {
   bool showCorrectSplash = false;
   bool showIncorrectSplash = false;
   bool _showExitConfirmation = false;
-  bool _isSavingScore = false;
+  final GameSaveGate _saveGate = GameSaveGate();
 
   int score = 0;
   int _levelPoints = 0;
@@ -86,7 +85,7 @@ class _OrderOperationsGameState extends State<OrderOperationsGame> {
 
   @override
   void dispose() {
-    GameLogger.endSession();
+    GameLogger.endSession(_gameName);
     SoundService().playPageBgm(BgmPage.home);
     super.dispose();
   }
@@ -99,7 +98,6 @@ class _OrderOperationsGameState extends State<OrderOperationsGame> {
       showCorrectSplash = false;
       showIncorrectSplash = false;
       _showExitConfirmation = false;
-      _isSavingScore = false;
       score = 0;
       _levelPoints = 0;
       level = 1;
@@ -487,41 +485,15 @@ class _OrderOperationsGameState extends State<OrderOperationsGame> {
   }
 
   Future<void> saveScore() async {
-    if (_isSavingScore) return;
-    _isSavingScore = true;
-
-    try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) return;
-
-      final firestore = FirebaseFirestore.instance;
-      final userRef = firestore.collection('users').doc(user.uid);
-
-      await GameLogger.logGame(
+    await _saveGate.run(() async {
+      await saveGameResult(
         gameName: _gameName,
         score: score,
+        level: level,
         difficulty: gameDifficultyModeLabel(_selectedMode),
-        extraHighscoreFields: {'order_operations_highscore': score},
+        storageKey: 'order_operations',
       );
-
-      await userRef.set({
-        'order_operations_last_score': score,
-        'order_operations_last_level': level,
-        'order_operations_last_played': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
-
-      if (score > 0) {
-        await updateLeaderboardEntry(
-          gameName: _gameName,
-          newScore: score,
-          difficulty: gameDifficultyModeLabel(_selectedMode),
-        );
-      }
-    } catch (error) {
-      debugPrint('Error in saveScore (Order of Operations): $error');
-    } finally {
-      _isSavingScore = false;
-    }
+    });
   }
 
   Future<void> _onBackPressed() async {
@@ -540,6 +512,22 @@ class _OrderOperationsGameState extends State<OrderOperationsGame> {
 
   @override
   Widget build(BuildContext context) {
+    // The screen drives every exit through _onBackPressed: it confirms, logs the
+    // leave attempt, and saves the score. The Android hardware/gesture back
+    // popped the route directly and skipped all three - no confirmation, no
+    // score, and no proctoring record. `canPop: false` routes that gesture
+    // into the same handler the on-screen arrow uses.
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (bool didPop, Object? result) {
+        if (didPop) return;
+        _onBackPressed();
+      },
+      child: _buildGameScreen(context),
+    );
+  }
+
+  Widget _buildGameScreen(BuildContext context) {
     return Theme(
       data: _buildTheme(context),
       child: AppBrightnessOverlay(
@@ -625,40 +613,7 @@ class _OrderOperationsGameState extends State<OrderOperationsGame> {
   }
 
   ThemeData _buildTheme(BuildContext context) {
-    final base = Theme.of(context);
-    return base.copyWith(
-      scaffoldBackgroundColor: Colors.transparent,
-      appBarTheme: const AppBarTheme(
-        backgroundColor: _inkColor,
-        foregroundColor: Colors.white,
-        centerTitle: true,
-        elevation: 0,
-      ),
-      textTheme: base.textTheme.apply(
-        bodyColor: _inkColor,
-        displayColor: _inkColor,
-      ),
-      colorScheme: base.colorScheme.copyWith(
-        primary: _accentColor,
-        secondary: _accentColor,
-        surface: _panelColor,
-      ),
-      elevatedButtonTheme: ElevatedButtonThemeData(
-        style: ElevatedButton.styleFrom(
-          backgroundColor: _accentColor,
-          foregroundColor: Colors.white,
-          minimumSize: const Size.fromHeight(54),
-          textStyle: const TextStyle(
-            fontSize: 17,
-            fontWeight: FontWeight.w900,
-          ),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
-          ),
-          elevation: 0,
-        ),
-      ),
-    );
+    return buildGameTheme(context, ink: _inkColor, accent: _accentColor);
   }
 
   Widget _buildBackground({required Widget child}) {
@@ -726,22 +681,11 @@ class _OrderOperationsGameState extends State<OrderOperationsGame> {
     required Widget child,
     EdgeInsetsGeometry padding = const EdgeInsets.all(18),
   }) {
-    return Container(
-      width: double.infinity,
-      padding: padding,
-      decoration: BoxDecoration(
-        color: _panelColor,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: _inkColor, width: 2.2),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x332C3550),
-            offset: Offset(5, 6),
-            blurRadius: 0,
-          ),
-        ],
-      ),
+    return gameCard(
       child: child,
+      panel: _panelColor,
+      ink: _inkColor,
+      padding: padding,
     );
   }
 
@@ -860,7 +804,10 @@ class _OrderOperationsGameState extends State<OrderOperationsGame> {
           ),
         ],
         const SizedBox(height: 12),
-        HeartsDisplay(hearts: hearts),
+        HeartsDisplay(
+          hearts: hearts,
+          maxHearts: gameDifficultyModeHearts(_selectedMode),
+        ),
         const SizedBox(height: 12),
         _card(
           padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),

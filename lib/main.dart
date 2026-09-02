@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'utils/firebase_options.dart';
 import 'app_gate.dart';
+import 'services/app_settings_service.dart';
 import 'services/sound_service.dart';
 
 void main() async {
@@ -20,6 +21,26 @@ void main() async {
   FirebaseFirestore.instance.settings = const Settings(
     persistenceEnabled: true,
     cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
+  );
+
+  // Restore the player's own settings before the first frame, so the app does
+  // not flash at full brightness and full volume on the way to what they
+  // actually chose. Never throws - the defaults stand if nothing was saved.
+  await AppSettingsService().load(
+    applySound: (soundEnabled, music, sfx) {
+      // Unawaited on purpose - start-up must not block on the audio player -
+      // but the failure is caught, or a device with no audio output would
+      // throw an unhandled async error before the first frame.
+      SoundService()
+          .applyRestoredSettings(
+            soundEnabled: soundEnabled,
+            musicLevel: music,
+            sfxLevel: sfx,
+          )
+          .catchError((Object error) {
+        debugPrint('Could not apply saved sound settings: $error');
+      });
+    },
   );
 
   runApp(const BrainTrainerApp());
