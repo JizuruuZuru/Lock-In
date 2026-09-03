@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../../services/player_proctoring_preference.dart';
+import '../../services/game_result_recorder.dart';
 import '../../services/leaderboard_service.dart';
 import '../../services/game_logger.dart';
 
@@ -82,6 +83,15 @@ class _MathGameState extends State<MathGame> with WidgetsBindingObserver {
   /// camera in their own settings, or it could not be opened.
   bool _runProctored = false;
 
+  /// The pause between answering and the next round.
+  ///
+  /// Was an un-cancellable `Future.delayed`. Its callback starts the next
+  /// round - clearing `isGameOver` and minting a fresh `timerKey` - so a face
+  /// violation, an app-background, or a tap on Back landing inside that window
+  /// put a warning overlay on screen with a live round running underneath it.
+  /// Cancelled whenever an overlay goes up, and on dispose.
+  Timer? _feedbackTimer;
+
   // 🔥 duplicate prevention
   bool _isSavingScore = false;
 
@@ -97,6 +107,7 @@ class _MathGameState extends State<MathGame> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    _feedbackTimer?.cancel();
     // Ends only this screen's session. Passing no name would clear every
     // game's, including one still open underneath this route.
     final mode = selectedMode;
@@ -349,6 +360,9 @@ class _MathGameState extends State<MathGame> with WidgetsBindingObserver {
       isGameOver = true;
       showCorrectSplash = false;
       showIncorrectSplash = false;
+      // Drop any pending "next round" callback, or it will restart
+      // the round behind this overlay.
+      _feedbackTimer?.cancel();
       _showLeaveWarning = true;
       _showExitConfirmation = false;
       _suspendLeaveDetector = true;
@@ -356,11 +370,23 @@ class _MathGameState extends State<MathGame> with WidgetsBindingObserver {
     });
 
     try {
-      await LeaveAttemptLogger.logAttempt(
-        gameName: _gameNameFor(currentMode),
-        reason: 'app_backgrounded_or_home_pressed',
-      );
-      await saveScore();
+      // Bounded, because `isBusy: _processingLeaveAttempt` disables both
+      // Stay and Leave on the warning overlay while this runs. A Firestore
+      // write future only completes on server acknowledgement, so offline
+      // this never returned and the overlay sat there with both buttons
+      // greyed out - no way back into the game and no way out of it.
+      //
+      // Issued together rather than in sequence so the score save still
+      // reaches the local cache when the log write is the one hanging.
+      await saveBeforeLeaving(() async {
+        await Future.wait<void>([
+          LeaveAttemptLogger.logAttempt(
+            gameName: _gameNameFor(currentMode),
+            reason: 'app_backgrounded_or_home_pressed',
+          ),
+          saveScore(),
+        ]);
+      });
     } finally {
       if (mounted) {
         setState(() {
@@ -386,6 +412,9 @@ class _MathGameState extends State<MathGame> with WidgetsBindingObserver {
         isGameOver = true;
         showCorrectSplash = false;
         showIncorrectSplash = false;
+        // Drop any pending "next round" callback, or it will restart
+        // the round behind this overlay.
+        _feedbackTimer?.cancel();
         _showLeaveWarning = true;
         _showExitConfirmation = false;
         _suspendLeaveDetector = true;
@@ -394,15 +423,27 @@ class _MathGameState extends State<MathGame> with WidgetsBindingObserver {
     }
 
     try {
-      await LeaveAttemptLogger.logAttempt(
-        gameName: gameName,
-        reason: _faceViolationReasonTag(event.reason),
-        source: 'face_detector',
-        details: {
-          'seconds_without_valid_face': event.secondsWithoutValidFace,
-        },
-      );
-      await saveScore();
+      // Bounded, because `isBusy: _processingLeaveAttempt` disables both
+      // Stay and Leave on the warning overlay while this runs. A Firestore
+      // write future only completes on server acknowledgement, so offline
+      // this never returned and the overlay sat there with both buttons
+      // greyed out - no way back into the game and no way out of it.
+      //
+      // Issued together rather than in sequence so the score save still
+      // reaches the local cache when the log write is the one hanging.
+      await saveBeforeLeaving(() async {
+        await Future.wait<void>([
+          LeaveAttemptLogger.logAttempt(
+            gameName: gameName,
+            reason: _faceViolationReasonTag(event.reason),
+            source: 'face_detector',
+            details: {
+              'seconds_without_valid_face': event.secondsWithoutValidFace,
+            },
+          ),
+          saveScore(),
+        ]);
+      });
     } finally {
       if (mounted) {
         setState(() {
@@ -480,6 +521,9 @@ class _MathGameState extends State<MathGame> with WidgetsBindingObserver {
     unawaited(_stopFaceProctor());
 
     setState(() {
+      // No feedback timer to cancel here: `_shouldConfirmExit()` above is
+      // false while a correct/incorrect splash is up, so this overlay cannot
+      // open inside the feedback window in the first place.
       _showExitConfirmation = true;
       isGameOver = true;
     });
@@ -499,11 +543,44 @@ class _MathGameState extends State<MathGame> with WidgetsBindingObserver {
     }
   }
 
-  void _confirmExitFromBack() {
+  Future<void> _confirmExitFromBack() async {
     if (_processingLeaveAttempt) return;
 
-    unawaited(_stopFaceProctor());
-    Navigator.of(context).maybePop();
+    // Best-effort: a camera that refuses to release must not strand the player
+    // on a screen they asked to leave.
+    try {
+      await _stopFaceProctor();
+    } catch (error) {
+      debugPrint('Could not release the camera while leaving: $error');
+    }
+
+    // The other ten games record the walk-out; this screen did not, so a
+    // player who left a round mid-way left no trace at all. The score is
+    // deliberately *not* saved here - the dialog above this button says the
+    // progress will be lost, and it should keep telling the truth.
+    final mode = selectedMode;
+    if (mode != null) {
+      // Bounded: a Firestore write future only completes on server
+      // acknowledgement, so awaiting one offline is what stops an exit button
+      // responding at all. See saveBeforeLeaving.
+      await saveBeforeLeaving(() => LeaveAttemptLogger.logAttempt(
+            gameName: _gameNameFor(mode),
+            reason: 'player_pressed_back_while_playing',
+            source: 'back_button',
+            details: {
+              'score': score,
+              'level': level,
+            },
+          ));
+    }
+
+    if (!mounted) return;
+
+    // `Navigator.pop`, not `maybePop`. This screen's `PopScope(canPop: false)`
+    // hands `maybePop` straight back to `_onAppBarBackPressed`, which then
+    // returns immediately because `_showExitConfirmation` is still true - so
+    // the Leave button did nothing whatsoever.
+    Navigator.pop(context);
   }
 
   Future<void> _onAppBarBackPressed() async {
@@ -517,7 +594,11 @@ class _MathGameState extends State<MathGame> with WidgetsBindingObserver {
       return;
     }
 
-    Navigator.of(context).maybePop();
+    // `Navigator.pop`, not `maybePop`. This screen's own
+    // `PopScope(canPop: false)` intercepts `maybePop` and calls this handler
+    // again, which calls `maybePop` again - an endless loop, so the back arrow
+    // never left the mode panel.
+    Navigator.pop(context);
   }
 
   String modeDisplayName(MathMode mode) {
@@ -762,7 +843,7 @@ class _MathGameState extends State<MathGame> with WidgetsBindingObserver {
         showCorrectSplash = true;
         isGameOver = true;
       });
-      Future.delayed(const Duration(milliseconds: 600), () {
+      _feedbackTimer = Timer(const Duration(milliseconds: 600), () {
         if (mounted) {
           setState(() {
             score++;
@@ -788,7 +869,7 @@ class _MathGameState extends State<MathGame> with WidgetsBindingObserver {
       debugPrint('Error saving score on incorrect: $e');
     }));
 
-    Future.delayed(const Duration(milliseconds: 600), () {
+    _feedbackTimer = Timer(const Duration(milliseconds: 600), () {
       if (mounted) {
         setState(() {
           showIncorrectSplash = false;

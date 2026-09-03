@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../services/face_proctor_contract.dart';
 import '../services/face_proctor_service.dart';
+import '../services/game_result_recorder.dart';
 import '../services/leave_attempt_logger.dart';
 import '../services/sound_service.dart';
 import 'leave_warning_overlay.dart';
@@ -15,7 +16,18 @@ class GameSecurityOverlay extends StatefulWidget {
   final String gameName;
   final bool isActive;
   final GameSecurityLockCallback? onLockChanged;
+
+  /// Called when the player taps **Leave**, to save whatever the run produced
+  /// before the screen goes.
+  ///
+  /// It is *not* responsible for navigating. This overlay leaves the screen
+  /// itself once this completes. It used to be the other way round - supplying
+  /// an `onLeave` made the caller responsible for getting off the screen - and
+  /// eight of the ten screens that supply one only saved the score and never
+  /// navigated, so tapping Leave dismissed the warning and dropped the player
+  /// straight back into the game they had just asked to leave.
   final GameSecurityAsyncCallback? onLeave;
+
   final GameSecurityAsyncCallback? onStay;
   final GameSecurityAsyncCallback? onAttemptRecorded;
   final Duration faceAbsenceThreshold;
@@ -297,15 +309,28 @@ class _GameSecurityOverlayState extends State<GameSecurityOverlay>
     }
 
     try {
-      await LeaveAttemptLogger.logAttempt(
-        gameName: widget.gameName,
-        reason: reason,
-        source: source,
-        details: details,
-      );
-      if (widget.onAttemptRecorded != null) {
-        await widget.onAttemptRecorded!();
-      }
+      // Bounded, because `isBusy: _isHandlingAttempt` below disables *both*
+      // Stay and Leave while this runs. A Firestore write future only
+      // completes once the server acknowledges it, so with no connection this
+      // never returned and the overlay sat on "Saving attempt..." with both
+      // buttons greyed out - permanently, with no way back into the game and
+      // no way out of it.
+      //
+      // The two are issued together rather than in sequence so the score save
+      // still reaches Firestore's local cache even when the log write is the
+      // one hanging.
+      final recorded = widget.onAttemptRecorded;
+      await saveBeforeLeaving(() async {
+        await Future.wait<void>([
+          LeaveAttemptLogger.logAttempt(
+            gameName: widget.gameName,
+            reason: reason,
+            source: source,
+            details: details,
+          ),
+          if (recorded != null) Future<void>.sync(() async => recorded()),
+        ]);
+      });
     } catch (error) {
       debugPrint('Security attempt log failed: $error');
     } finally {
@@ -356,22 +381,52 @@ class _GameSecurityOverlayState extends State<GameSecurityOverlay>
   Future<void> _leaveGame() async {
     if (_isHandlingAttempt) return;
     SoundService().playButtonSoundNow();
-    await _stopFaceProctor();
+
+    // Every step of leaving is behind this await, so a camera that refuses to
+    // release would strand the player on a screen they asked to leave.
+    // Releasing the lens is best-effort; getting out is not.
+    try {
+      await _stopFaceProctor();
+    } catch (error) {
+      debugPrint('Could not release the camera while leaving: $error');
+    }
+
     // Nothing left to unlock or navigate if the game screen is already gone.
     if (!mounted) return;
     setState(() {
       _isOverlayVisible = false;
       _didLeaveApp = false;
     });
-    widget.onLockChanged?.call(false);
 
+    // Deliberately *not* unlocking the screen here. `onLockChanged(false)`
+    // clears `isGameOver` and hands most screens a fresh `timerKey`, which
+    // restarts the countdown for as long as the save below takes - on a slow
+    // connection, long enough for the timer to fire behind a screen that is on
+    // its way out. The player asked to leave; the game does not resume.
     if (widget.onLeave != null) {
-      await widget.onLeave!();
-      return;
+      // Bounded, even though every screen's own `onLeave` already is. This
+      // widget promises that Leave leaves, and that promise cannot depend on
+      // what a caller chooses to await inside its save callback.
+      await saveBeforeLeaving(() async => widget.onLeave!());
     }
 
     if (!mounted) return;
-    await Navigator.of(context).maybePop();
+
+    // `Navigator.pop`, not `maybePop`. Every game screen wraps itself in
+    // `PopScope(canPop: false)` so the Android back gesture is routed through
+    // its own confirm-and-save handler, and `maybePop` honours that - it pops
+    // nothing and re-enters the screen's back handler instead, which then
+    // ignores it because a warning overlay is already showing.
+    final navigator = Navigator.of(context);
+    if (navigator.canPop()) {
+      navigator.pop();
+      return;
+    }
+
+    // Nothing to pop, so this game is the root route. Unlock rather than
+    // stranding the player on a screen with a dismissed warning and a game
+    // that never resumes.
+    widget.onLockChanged?.call(false);
   }
 
   @override

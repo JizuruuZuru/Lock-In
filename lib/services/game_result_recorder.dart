@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 
@@ -66,6 +68,50 @@ Future<void> saveGameResult({
       difficulty: difficulty,
       proctored: proctored,
     );
+  }
+}
+
+/// Runs a save that must not hold up leaving a screen.
+///
+/// A Firestore write future only completes when the **server** acknowledges
+/// it. With no connection that acknowledgement never arrives, so awaiting one
+/// never returns - the same trap `AppGate` documents for its `lastSeenAt`
+/// write, and `QuestionRepository._settle` solves for the admin forms.
+///
+/// Every exit path in the games awaited exactly that before navigating: the
+/// exit confirmation's Leave button, the back arrow, and the security
+/// overlay's Leave. Offline, all three simply stopped responding - the tap did
+/// nothing at all, with no spinner and no error, for as long as the device
+/// stayed offline.
+///
+/// Nothing is lost by giving up on the acknowledgement: the write is applied
+/// to Firestore's local cache the instant it is issued and is delivered on
+/// reconnect. The deadline is generous enough that a healthy connection still
+/// finishes first, so online behaviour is unchanged.
+Future<void> saveBeforeLeaving(
+  Future<void> Function() save, {
+  Duration deadline = const Duration(seconds: 3),
+}) async {
+  final Future<void> pending;
+  try {
+    pending = save();
+  } catch (error) {
+    // A synchronous throw before any future existed.
+    debugPrint('Save before leaving could not start: $error');
+    return;
+  }
+
+  try {
+    await pending.timeout(deadline);
+  } on TimeoutException {
+    // Still in flight. Keep a handler on it so a later failure - a rules
+    // rejection on reconnect, say - does not surface as an unhandled
+    // asynchronous error long after the screen has gone.
+    unawaited(pending.catchError((Object error) {
+      debugPrint('Queued save failed after leaving: $error');
+    }));
+  } catch (error) {
+    debugPrint('Save before leaving failed: $error');
   }
 }
 

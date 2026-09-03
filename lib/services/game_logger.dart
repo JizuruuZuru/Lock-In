@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
 import '../utils/game_key.dart';
@@ -63,16 +66,26 @@ class GameLogger {
     final now = FieldValue.serverTimestamp();
     final gameKey = safeGameKey(gameName);
 
-    await userRef.collection('game_logs').doc(sessionId).set({
-      'game': gameName,
-      'gameKey': gameKey,
-      'score': score,
-      if (difficulty != null) 'difficulty': difficulty,
-      if (proctored != null) 'proctored': proctored,
-      'sessionId': sessionId,
-      'timestamp': now,
-      'updatedAt': now,
-    }, SetOptions(merge: true));
+    // Issued, not awaited to completion. Firestore applies a write to its
+    // local cache immediately but only completes the future once the *server*
+    // acknowledges it, so with no connection this never returns - and
+    // everything below it never ran at all, including the highscore
+    // transaction and the offline fallback written specifically to survive
+    // this case. The log is durable either way and is delivered on reconnect.
+    unawaited(
+      userRef.collection('game_logs').doc(sessionId).set({
+        'game': gameName,
+        'gameKey': gameKey,
+        'score': score,
+        if (difficulty != null) 'difficulty': difficulty,
+        if (proctored != null) 'proctored': proctored,
+        'sessionId': sessionId,
+        'timestamp': now,
+        'updatedAt': now,
+      }, SetOptions(merge: true)).catchError((Object error) {
+        debugPrint('Game log write failed: $error');
+      }),
+    );
 
     // Read and write in one transaction. Reading the document, comparing
     // highscores, then writing them back as two separate round trips loses an
@@ -125,16 +138,24 @@ class GameLogger {
         cached = null;
       }
 
-      await userRef.set({
-        'last_game': gameName,
-        'last_game_key': gameKey,
-        'last_score': score,
-        'last_played': now,
-        'email': user.email,
-        ...extraFields,
-        for (final entry in candidates.entries)
-          if (entry.value > _storedScore(cached, entry.key)) entry.key: entry.value,
-      }, SetOptions(merge: true));
+      // Also issued rather than awaited. This branch only runs *because* the
+      // device is offline, so waiting for a server acknowledgement here would
+      // hang for exactly as long as the condition it exists to handle.
+      unawaited(
+        userRef.set({
+          'last_game': gameName,
+          'last_game_key': gameKey,
+          'last_score': score,
+          'last_played': now,
+          'email': user.email,
+          ...extraFields,
+          for (final entry in candidates.entries)
+            if (entry.value > _storedScore(cached, entry.key))
+              entry.key: entry.value,
+        }, SetOptions(merge: true)).catchError((Object error) {
+          debugPrint('Queued highscore write failed: $error');
+        }),
+      );
     }
   }
 

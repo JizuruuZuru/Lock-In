@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 
 import '../utils/game_key.dart';
 
@@ -141,9 +144,17 @@ Future<void> updateLeaderboardEntry({
     }
 
     final beatsStored = cached == null || newScore > scoreIn(cached);
-    await docRef.set(
-      beatsStored ? fullEntry() : touchOnly(),
-      SetOptions(merge: true),
+    // Issued, not awaited to completion. This branch only runs because the
+    // device is offline, and an offline write's future does not complete until
+    // the server has it - so awaiting it would hang the caller for exactly as
+    // long as the condition this fallback exists to survive.
+    unawaited(
+      docRef.set(
+        beatsStored ? fullEntry() : touchOnly(),
+        SetOptions(merge: true),
+      ).catchError((Object error) {
+        debugPrint('Queued leaderboard write failed: $error');
+      }),
     );
   }
 }

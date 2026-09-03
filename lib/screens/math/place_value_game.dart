@@ -69,6 +69,16 @@ class _PlaceValueGameState extends State<PlaceValueGame> {
   /// camera could not be opened.
   bool _runProctored = false;
 
+  /// The pause between answering and the next question.
+  ///
+  /// Was an un-cancellable `Future.delayed`. Its callback calls
+  /// `generateQuestion()`, which clears `isGameOver` and mints a fresh
+  /// `timerKey` - so a face violation or an app-background landing inside that
+  /// window put the "Leave / Stay" overlay on screen with a live timer
+  /// counting down underneath it, and the player lost a heart to a question
+  /// they could not see. Cancelled when the overlay locks, and on dispose.
+  Timer? _feedbackTimer;
+
   int score = 0;
   int _levelPoints = 0;
   int level = 1;
@@ -92,6 +102,7 @@ class _PlaceValueGameState extends State<PlaceValueGame> {
 
   @override
   void dispose() {
+    _feedbackTimer?.cancel();
     GameLogger.endSession(_gameName);
     SoundService().playPageBgm(BgmPage.home);
     super.dispose();
@@ -277,7 +288,7 @@ class _PlaceValueGameState extends State<PlaceValueGame> {
         isGameOver = true;
       });
 
-      Future.delayed(_correctFeedbackDuration, () {
+      _feedbackTimer = Timer(_correctFeedbackDuration, () {
         if (!mounted) return;
         setState(() => showCorrectSplash = false);
 
@@ -311,7 +322,7 @@ class _PlaceValueGameState extends State<PlaceValueGame> {
       debugPrint('Error saving Place Value score: $error');
     }));
 
-    Future.delayed(_incorrectFeedbackDuration, () {
+    _feedbackTimer = Timer(_incorrectFeedbackDuration, () {
       if (!mounted) return;
       setState(() => showIncorrectSplash = false);
       showGameOverScreen(incorrectAnswer);
@@ -399,20 +410,28 @@ class _PlaceValueGameState extends State<PlaceValueGame> {
 
   Future<void> _confirmExitFromBack() async {
     SoundService().playButtonSoundNow();
-    try {
-      await LeaveAttemptLogger.logAttempt(
-        gameName: _gameName,
-        reason: 'player_pressed_back_while_playing',
-        source: 'back_button',
-        details: {
-          'score': score,
-          'level': level,
-        },
-      );
-    } catch (error) {
-      debugPrint('Leave attempt log failed: $error');
-    }
-    await saveScore();
+
+    // Both writes are issued here, so each reaches Firestore's local
+    // cache straight away - but neither acknowledgement is allowed to
+    // hold up leaving. Awaiting them is what made this button stop
+    // responding entirely on a device with no connection.
+    await saveBeforeLeaving(() async {
+      await Future.wait<void>([
+        LeaveAttemptLogger.logAttempt(
+          gameName: _gameName,
+          reason: 'player_pressed_back_while_playing',
+          source: 'back_button',
+          details: {
+            'score': score,
+            'level': level,
+          },
+        ).catchError((Object error) {
+          debugPrint('Leave attempt log failed: $error');
+        }),
+        saveScore(),
+      ]);
+    });
+
     if (!mounted) return;
     Navigator.pop(context);
   }
@@ -438,7 +457,8 @@ class _PlaceValueGameState extends State<PlaceValueGame> {
 
     SoundService().playButtonSoundNow();
     if (hasStarted && score > 0) {
-      await saveScore();
+      // Bounded: offline this never returned, so the back arrow did nothing.
+      await saveBeforeLeaving(saveScore);
     }
     if (!mounted) return;
     Navigator.pop(context);
@@ -497,6 +517,9 @@ class _PlaceValueGameState extends State<PlaceValueGame> {
                         setState(() {
                           isGameOver = locked;
                           if (locked) {
+                            // Drop any pending "next question" callback, or it
+                            // will restart the round behind this overlay.
+                            _feedbackTimer?.cancel();
                             showCorrectSplash = false;
                             showIncorrectSplash = false;
                             _showExitConfirmation = false;
@@ -507,9 +530,8 @@ class _PlaceValueGameState extends State<PlaceValueGame> {
                       },
                       onLeave: () async {
                         if (score > 0) {
-                          await saveScore();
+                          await saveBeforeLeaving(saveScore);
                         }
-                        if (!mounted) return;
                       },
                       onStay: () {
                         startGame();

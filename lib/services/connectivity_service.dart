@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
@@ -23,8 +24,16 @@ class ConnectivityService {
     if (kIsWeb) return false;
 
     try {
-      final lookup = await InternetAddress.lookup('example.com');
+      // Bounded. A DNS lookup on a captive portal or a half-dead network can
+      // hang for as long as the OS is willing to wait, and until it answers
+      // `offlineStream` emits nothing at all - so the banner stays hidden on
+      // exactly the network where somebody most needs to be told. A lookup
+      // that cannot finish promptly is, for this purpose, offline.
+      final lookup = await InternetAddress.lookup('example.com')
+          .timeout(const Duration(seconds: 4));
       return lookup.isEmpty;
+    } on TimeoutException {
+      return true;
     } on SocketException {
       return true;
     } on UnsupportedError {

@@ -310,22 +310,30 @@ class _SubjectQuizGameState extends State<SubjectQuizGame> {
 
   Future<void> _confirmExitFromBack() async {
     SoundService().playButtonSoundNow();
-    try {
-      await LeaveAttemptLogger.logAttempt(
-        gameName: _gameName,
-        reason: 'player_pressed_back_while_playing',
-        source: 'back_button',
-        details: {
-          'score': score,
-          'level': level,
-          'subject': widget.subject.name,
-          if (widget.lessonTitle != null) 'lesson': widget.lessonTitle,
-        },
-      );
-    } catch (error) {
-      debugPrint('Leave attempt log failed: $error');
-    }
-    await saveScore();
+
+    // Both writes are issued here, so each reaches Firestore's local
+    // cache straight away - but neither acknowledgement is allowed to
+    // hold up leaving. Awaiting them is what made this button stop
+    // responding entirely on a device with no connection.
+    await saveBeforeLeaving(() async {
+      await Future.wait<void>([
+        LeaveAttemptLogger.logAttempt(
+          gameName: _gameName,
+          reason: 'player_pressed_back_while_playing',
+          source: 'back_button',
+          details: {
+            'score': score,
+            'level': level,
+            'subject': widget.subject.name,
+            if (widget.lessonTitle != null) 'lesson': widget.lessonTitle,
+          },
+        ).catchError((Object error) {
+          debugPrint('Leave attempt log failed: $error');
+        }),
+        saveScore(),
+      ]);
+    });
+
     if (!mounted) return;
     Navigator.pop(context);
   }
@@ -351,7 +359,8 @@ class _SubjectQuizGameState extends State<SubjectQuizGame> {
 
     SoundService().playButtonSoundNow();
     if (hasStarted && score > 0) {
-      await saveScore();
+      // Bounded: offline this never returned, so the back arrow did nothing.
+      await saveBeforeLeaving(saveScore);
     }
     if (!mounted) return;
     Navigator.pop(context);
@@ -426,11 +435,12 @@ class _SubjectQuizGameState extends State<SubjectQuizGame> {
                   });
                 },
                 onLeave: () async {
+                  // Save only. GameSecurityOverlay leaves the screen once this
+                  // completes - popping here as well would take the home
+                  // screen out from under it.
                   if (score > 0) {
-                    await saveScore();
+                    await saveBeforeLeaving(saveScore);
                   }
-                  if (!context.mounted) return;
-                  Navigator.pop(context);
                 },
                 onStay: () {
                   startGame();

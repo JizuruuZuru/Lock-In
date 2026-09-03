@@ -41,6 +41,7 @@ import '../../models/app_user_record.dart';
 import '../../services/app_settings_service.dart';
 import '../../services/connectivity_service.dart';
 import '../../services/custom_question_sync.dart';
+import '../../services/game_result_recorder.dart';
 import '../../services/player_proctoring_preference.dart';
 import '../../services/proctoring_settings.dart';
 import '../../services/google_link_service.dart';
@@ -464,22 +465,31 @@ class _HomeMenuState extends State<HomeMenu> {
     final userRef = firestore.collection('users').doc(currentUser.uid);
     final now = Timestamp.now();
 
-    await userRef.collection('data_clear_events').add({
-      'action': 'clear_history_and_profile_view',
-      'timestamp': now,
-      'source': 'profile_clear_data_button',
+    // Both writes are issued together, and neither acknowledgement is waited
+    // on indefinitely: a Firestore write future only completes once the server
+    // has it, so awaiting these meant tapping Clear Data on a device with no
+    // connection did nothing at all - no snackbar, no error, no sign it had
+    // been pressed. The writes reach the local cache immediately and sync on
+    // reconnect.
+    await saveBeforeLeaving(() async {
+      await Future.wait<void>([
+        userRef.collection('data_clear_events').add({
+          'action': 'clear_history_and_profile_view',
+          'timestamp': now,
+          'source': 'profile_clear_data_button',
+        }),
+        userRef.set(
+          {
+            'history_cleared_at': now,
+            'last_data_clear_at': now,
+            'last_data_clear_source': 'profile_clear_data_button',
+            'data_clear_count': FieldValue.increment(1),
+            'email': currentUser.email,
+          },
+          SetOptions(merge: true),
+        ),
+      ]);
     });
-
-    await userRef.set(
-      {
-        'history_cleared_at': now,
-        'last_data_clear_at': now,
-        'last_data_clear_source': 'profile_clear_data_button',
-        'data_clear_count': FieldValue.increment(1),
-        'email': currentUser.email,
-      },
-      SetOptions(merge: true),
-    );
 
     if (!mounted || !context.mounted) return;
 

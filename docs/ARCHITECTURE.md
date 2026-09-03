@@ -302,6 +302,24 @@ already stored locally and queued. `QuestionRepository._settle` gives the
 acknowledgement a deadline and otherwise reports `queuedOffline` — the write is
 durable either way.
 
+**The same rule applies everywhere, and the player-facing screens had missed
+it.** Awaiting a write acknowledgement anywhere a person is waiting means that
+thing stops working offline, silently and with no timeout:
+
+| Where | What it looked like |
+|---|---|
+| The exit confirmation's Leave, the back arrow, the security overlay's Leave | The tap did nothing at all, forever |
+| The security warning's "Saving attempt…" | Both Stay and Leave greyed out permanently |
+| Profile → Clear Data | No snackbar, no error, no sign the button had been pressed |
+| `GameLogger.logGame` | The first write blocked the rest of the method, so the highscore transaction *and its own offline fallback* never ran |
+| `updateLeaderboardEntry`'s offline branch | Hung for exactly as long as the condition it was written to survive |
+
+Two shapes fix these. Anywhere a person is waiting on the result, wrap it with
+`saveBeforeLeaving` (`lib/services/game_result_recorder.dart`), which issues the
+write, waits out a short deadline, and then lets the caller go. Anywhere nobody
+is waiting — a background log, an offline fallback — issue it with `unawaited`
+and a `catchError`. Never bare-`await` a write on a path that has to finish.
+
 ---
 
 ## 7. Exam proctoring flow
@@ -324,7 +342,8 @@ stateDiagram-v2
 
     Violation --> Logged: LeaveAttemptLogger.logAttempt()
     Logged --> Warned: warning overlay + sound
-    Warned --> Running: student returns
+    Warned --> Running: student taps Stay
+    Warned --> Saved: student taps Leave
     Warned --> AutoSubmit: repeat violation
 
     Running --> Finished: hearts exhausted or timer ends
@@ -338,6 +357,12 @@ Every violation increments `cheat_attempts_count` on the user document and adds
 a row to `users/{uid}/leave_attempts`, so a teacher can see the pattern rather
 than a single number. Face frames are processed on-device by ML Kit and are
 never uploaded.
+
+**Leave** is the overlay's own job, not the screen's. `onLeave` saves whatever
+the run produced and `GameSecurityOverlay` then pops the route itself, with
+`Navigator.pop` rather than `maybePop` — every game screen wraps itself in
+`PopScope(canPop: false)` to route the Android back gesture through its own
+confirm-and-save handler, and `maybePop` honours that, so it would pop nothing.
 
 The gate at the top is two switches, both of which must say yes: the teacher's
 `app_config/proctoring` (`ProctoringSettings`) and the player's own
