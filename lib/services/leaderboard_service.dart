@@ -62,10 +62,17 @@ String _nameFrom(User user, Map<String, dynamic>? data) {
 
 /// Updates or creates one leaderboard entry per user per game.
 /// All games should call this after score save.
+///
+/// [proctored] is whether the front camera was watching the run that set this
+/// score, and it is what the leaderboard's "Camera on / Camera off" badge
+/// reads. Null means the run could not say - which is also what every row
+/// written before the badge existed looks like - and those rows get no badge
+/// rather than a wrong one.
 Future<void> updateLeaderboardEntry({
   required String gameName,
   required int newScore,
   String? difficulty,
+  bool? proctored,
 }) async {
   final user = FirebaseAuth.instance.currentUser;
   if (user == null) return;
@@ -77,6 +84,10 @@ Future<void> updateLeaderboardEntry({
   final docId = '${user.uid}_$safeGameId';
   final docRef = firestore.collection('leaderboard_entries').doc(docId);
 
+  // Deliberately no `proctored` here. The row describes the run that set the
+  // stored best score, so a later, weaker run must not rewrite the badge on a
+  // score it did not set - a player could otherwise turn the camera on, play
+  // badly once, and relabel an unwatched high score as watched.
   Map<String, dynamic> touchOnly() => {
         'username': playerName,
         'fullName': playerName,
@@ -91,6 +102,7 @@ Future<void> updateLeaderboardEntry({
         'gameKey': safeGameId,
         'score': newScore,
         if (difficulty != null) 'difficulty': difficulty,
+        if (proctored != null) 'proctored': proctored,
         'timestamp': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       };

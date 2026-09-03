@@ -64,6 +64,7 @@ Future<void> saveGameResult({
       gameName: gameName,
       newScore: score,
       difficulty: difficulty,
+      proctored: proctored,
     );
   }
 }

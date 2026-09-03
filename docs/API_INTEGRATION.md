@@ -156,7 +156,8 @@ final response = await _send('DELETE', uri);
 
 Firestore answers a successful delete with `200` and an empty JSON object, so
 there is nothing to parse — the status code *is* the result. An empty body is
-reported as `{}` rather than blank so the console never shows a mystery gap.
+reported as `{}` rather than blank so the copied transcript never shows a
+mystery gap.
 
 ### One send path for all three verbs
 
@@ -369,7 +370,7 @@ unchanged and `updateTime` has moved:
 
 | Screen | What it shows |
 |---|---|
-| **API Console** (`ApiConsolePage`) | Every request in order as an expandable card: colour-coded method badge, URL, status, duration, and the full request and response bodies, each copyable. A "Copy the whole log" action puts the entire transcript on the clipboard. |
+| **Connection Check** (`ApiConsolePage`) | Every step in order as a plain card: what it was trying to do, whether it worked, and — for a failure — what to try next. The screen is written for a teacher checking the app works, so it shows no URLs, method badges, bodies, or timings. The full transcript is still captured for every run: the toolbar's copy action puts method, URL, status, duration, and both bodies for all eight steps on the clipboard. |
 | **Trivia importer** (`TriviaImportPage`) | Questions that came back as a preview table with checkboxes — question text, correct answer in green, wrong answers in grey, difficulty, and the level it would unlock at. Duplicates already in the bank are greyed out and cannot be ticked. |
 | **JSON inspector** | The `{ }` button in the import screen's app bar opens the real GET response and the last POST request/response, copyable. |
 | **Word lookup** (`WordLookupSheet`) | Definition, phonetic spelling, part of speech, example sentence, and synonyms, with a "hear it" button. Long words in every question are underlined and tappable. |
@@ -475,11 +476,11 @@ Sample terminal output:
 |---|---|
 | **API connection established** | Admin Panel → API Console, after "Run all requests" — the summary chip reads "N succeeded" |
 | **GET tested** | The two GET cards expanded, showing the trivia and dictionary responses |
-| **POST tested** | The POST card expanded, showing the typed-envelope request body and the `name`/`createTime` response |
-| **PATCH tested** | The PATCH card expanded — the URL shows the `updateMask.fieldPaths` query parameters |
-| **DELETE tested** | The DELETE card expanded, showing `{}` and HTTP 200 |
+| **POST tested** | The copied transcript's POST section — the typed-envelope request body and the `name`/`createTime` response |
+| **PATCH tested** | The copied transcript's PATCH section — the URL shows the `updateMask.fieldPaths` query parameters |
+| **DELETE tested** | The copied transcript's DELETE section — `{}` and HTTP 200 |
 | **Responses properly displayed** | The importer's preview table, and the dictionary sheet open over a quiz question |
-| **Error responses handled** | The "expected failure" cards in the console (red badge, plain-language message); or turn Wi-Fi off and tap "Fetch questions" in the importer |
+| **Error responses handled** | The "expected failure" card in the Connection Check (plain-language message plus the advice box); or turn Wi-Fi off and tap "Fetch questions" in the importer |
 | **Authentication** | The Firestore cards — the request only succeeds while signed in as an admin; sign in as a student to capture the 403 |
 | **API testing logs** | `dart run tool/api_smoke_test.dart` terminal output, plus `docs/evidence/api-test-log.txt` |
 

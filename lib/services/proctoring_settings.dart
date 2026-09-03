@@ -74,12 +74,18 @@ class ProctoringConfig {
 /// Where the settings currently in force came from.
 enum ProctoringSource { idle, localCache, live }
 
-/// The teacher-owned switch for front-camera proctoring.
+/// The teacher-owned half of front-camera proctoring.
 ///
-/// Deliberately **not** a per-device preference. Proctoring is an anti-cheat
-/// feature, so a control the student can reach would defeat it - this lives in
-/// Firestore under `app_config/proctoring`, is writable only by an admin (see
-/// `firestore.rules`), and applies to every device at once.
+/// This lives in Firestore under `app_config/proctoring`, is writable only by
+/// an admin (see `firestore.rules`), and applies to every device at once.
+///
+/// It is the *gate*, not the whole answer. A student has their own switch in
+/// `PlayerProctoringPreference`, and both have to say yes before a camera
+/// opens - `faceProctorEnabledFor` is the single expression that asks both, and
+/// it is what game screens call rather than [enabledFor] here. What stops a
+/// student's opt-out from simply defeating the feature is that it is not
+/// secret: a score set with the camera off is written to the leaderboard as
+/// such and shows a "Camera off" badge next to the player's name.
 ///
 /// Start-up mirrors `CustomQuestionSync`: the on-device copy is applied first
 /// so a game can start with the right setting on the very first frame and with
@@ -126,7 +132,8 @@ class ProctoringSettings {
 
   bool get isListening => _subscription != null;
 
-  /// Convenience for a game screen: is proctoring wanted here?
+  /// Whether the *teacher* wants proctoring here. A game screen wants
+  /// `faceProctorEnabledFor`, which also asks the player.
   bool enabledFor({required bool isExam}) =>
       config.value.enabledFor(isExam: isExam);
 

@@ -93,6 +93,7 @@ erDiagram
         string gameKey
         int    score "personal best"
         string difficulty
+        bool   proctored "camera on for the run that set it"
         ts     timestamp
     }
 
@@ -322,9 +323,21 @@ One row per player per game, holding only their personal best.
 | `game` / `gameKey` | string | |
 | `score` | int | Personal best. Written inside a transaction that reads the existing score first and only replaces it when the new one is higher. |
 | `difficulty` | string | Optional. |
+| `proctored` | bool | Optional. Whether the front camera was watching the run that set this score. Drives the "Camera on" / "Camera off" badge on the leaderboard row. |
 | `timestamp` / `updatedAt` / `lastSeenAt` | timestamp | |
 
-**Why the name is denormalised.** Firestore cannot join. Copying the display
+**Why `proctored` is only written with a new best score.** The row describes the
+run that set the stored score, so the "score did not beat the stored one" branch
+writes the name and `lastSeenAt` and nothing else. Rewriting the badge on a
+weaker run would let a player turn the camera on, play badly once, and relabel an
+unwatched high score as watched.
+
+**Why a missing `proctored` shows no badge.** Every row written before the badge
+existed has no such field, and so does any row a client wrote without one. The
+leaderboard reads it defensively and renders nothing rather than labelling an
+unknown run "Camera off".
+
+**Why the name is denormalised. Firestore cannot join. Copying the display
 name onto the entry means the leaderboard is one query instead of one query plus
 N profile reads. A name change rewrites it on the next score save.
 
@@ -352,9 +365,9 @@ writable only by an admin.
 | `faceProctorLessons` | bool | Watch during the practice games. Defaults to `true`. |
 | `updatedAt` / `updatedBy` | timestamp / uid | Audit stamp. |
 
-**Why this is not a device preference.** Proctoring is anti-cheat, so a switch
-a student could reach would defeat it. It lives here so one teacher decision
-reaches every device.
+**Why this is server-side.** One teacher decision has to reach every device at
+once, and no student may raise it. It is the outer gate on proctoring, not the
+whole answer — see *The player's own switch* below.
 
 **Why a missing field means `true`.** `ProctoringConfig.fromMap` falls back to
 the default for anything absent or non-boolean, so a half-written document
@@ -363,6 +376,27 @@ at all is also valid — it just means no admin has saved yet, and the defaults
 apply. Each device also mirrors the last known values to
 `shared_preferences`, so a cold offline launch still starts a game with the
 right setting.
+
+### The player's own switch — not stored in Firestore
+
+The camera has a second switch, owned by the student, under **Camera anti-cheat**
+in their profile settings. Both have to say yes before a lens opens:
+`faceProctorEnabledFor(isExam:)` in `lib/services/player_proctoring_preference.dart`
+is the single expression every game screen asks, so a teacher's `false` always
+wins and a student can only decline within what is already allowed.
+
+It is a plain `shared_preferences` bool, keyed `lockin.face_proctor_opt_in.v1.<uid>`
+— per uid rather than per device, so two children sharing a tablet cannot inherit
+each other's answer, and cleared at sign-out. It is deliberately **not** in
+Firestore: a game screen reads it on its first frame, and a network round trip
+there would mean either blocking the start of a round or guessing.
+
+**Why letting a student opt out does not defeat the anti-cheat.** Declining is
+not secret. The choice is recorded on the score (`proctored: false`) and shows as
+a "Camera off" badge beside that player's name on the leaderboard, so an
+unwatched high score is visibly unwatched. A teacher who wants no opt-out at all
+turns the relevant switch off in Exam Security, which stops the camera and marks
+every score the same way for everybody.
 
 ---
 

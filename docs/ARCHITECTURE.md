@@ -309,7 +309,11 @@ durable either way.
 ```mermaid
 stateDiagram-v2
     [*] --> Setup: student opens Exam mode
-    Setup --> Running: subjects + difficulty chosen
+    Setup --> Gate: subjects + difficulty chosen
+
+    Gate --> Running: teacher allows AND player opted in
+    Gate --> Unwatched: either switch says no
+    Unwatched --> Running: play continues, proctored = false
 
     Running --> FaceCheck: front camera frame
     FaceCheck --> Running: face present
@@ -334,6 +338,14 @@ Every violation increments `cheat_attempts_count` on the user document and adds
 a row to `users/{uid}/leave_attempts`, so a teacher can see the pattern rather
 than a single number. Face frames are processed on-device by ML Kit and are
 never uploaded.
+
+The gate at the top is two switches, both of which must say yes: the teacher's
+`app_config/proctoring` (`ProctoringSettings`) and the player's own
+`shared_preferences` opt-in (`PlayerProctoringPreference`). `GameSecurityOverlay`
+reports back through `onProctorWatchingChanged` whether a camera actually opened
+— reporting `false` for a refused permission, a missing front camera, a failed
+start, an unsupported platform, and for either switch being off — and the screen
+saves that as `proctored` on the score, the game log, and the leaderboard row.
 
 ---
 

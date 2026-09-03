@@ -22,15 +22,21 @@ class GameSecurityOverlay extends StatefulWidget {
   final bool enableFaceProctor;
   final FaceProctorService? faceProctor;
 
-  /// Fired when proctoring was wanted for this run but could not run - camera
-  /// permission denied, no front camera, or an initialisation failure.
+  /// Reports whether the camera is actually watching this run.
   ///
   /// The game continues either way; this exists so the screen can record the
-  /// run as unwatched, which is what lets a teacher tell a proctored score from
-  /// an unproctored one. It is not fired when proctoring was switched off by an
-  /// admin, or on a platform that never supports it - neither of those is an
-  /// exam-integrity event.
-  final VoidCallback? onProctoringUnavailable;
+  /// run truthfully, which is what the leaderboard's "Camera on / Camera off"
+  /// badge reads. Every reason for a `false` looks the same to whoever reads
+  /// that badge, so they are all reported the same way: the teacher switched
+  /// proctoring off, the player declined it in their own settings, the platform
+  /// has no face detection, the camera permission was refused, or the device
+  /// has no front camera. Only a clean start reports `true`.
+  ///
+  /// This replaced an `onProctoringUnavailable` callback that fired only for
+  /// the three *failure* cases. A screen listening to that one had no way to
+  /// tell "watched" from "never even attempted", so a round played on the web -
+  /// where face detection does not exist - was saved claiming it was watched.
+  final ValueChanged<bool>? onProctorWatchingChanged;
 
   const GameSecurityOverlay({
     super.key,
@@ -43,7 +49,7 @@ class GameSecurityOverlay extends StatefulWidget {
     this.faceAbsenceThreshold = const Duration(seconds: 3),
     this.enableFaceProctor = true,
     this.faceProctor,
-    this.onProctoringUnavailable,
+    this.onProctorWatchingChanged,
   });
 
   @override
@@ -59,6 +65,11 @@ class _GameSecurityOverlayState extends State<GameSecurityOverlay>
   bool _isOverlayVisible = false;
   bool _isProctorRunning = false;
   bool _faceUnsupported = false;
+
+  /// The last answer handed to [GameSecurityOverlay.onProctorWatchingChanged],
+  /// so a repeated start attempt does not re-announce what the screen already
+  /// knows.
+  bool? _reportedWatching;
 
   String _title = 'Warning';
   String _message = 'You have left the app. The game will restart.';
@@ -114,6 +125,16 @@ class _GameSecurityOverlayState extends State<GameSecurityOverlay>
 
   Future<void> _syncProctorWithActiveState() async {
     if (!mounted) return;
+
+    if (!widget.enableFaceProctor) {
+      // Proctoring is off for this run - either the teacher's switch or the
+      // player's own. Release the camera if a previous state had it open, and
+      // tell the screen, so the score is not saved claiming it was watched.
+      await _stopFaceProctor();
+      _setWatching(false);
+      return;
+    }
+
     if (widget.isActive && !_isOverlayVisible && !_isHandlingAttempt) {
       await _startFaceProctor();
     } else {
@@ -121,10 +142,15 @@ class _GameSecurityOverlayState extends State<GameSecurityOverlay>
     }
   }
 
+  /// Announces the watching state once, and only when it actually changes.
+  void _setWatching(bool watching) {
+    if (_reportedWatching == watching) return;
+    _reportedWatching = watching;
+    widget.onProctorWatchingChanged?.call(watching);
+  }
+
   Future<void> _startFaceProctor() async {
-    if (!widget.enableFaceProctor || _faceUnsupported || _isProctorRunning) {
-      return;
-    }
+    if (_faceUnsupported || _isProctorRunning) return;
 
     // Claimed *before* the await, not after.
     //
@@ -170,11 +196,16 @@ class _GameSecurityOverlayState extends State<GameSecurityOverlay>
 
     switch (status) {
       case FaceProctorStartStatus.started:
+        _setWatching(true);
         return;
       case FaceProctorStartStatus.unsupportedPlatform:
         // Same behavior as Math Game: web/desktop can continue, while Android
         // and iOS use the mobile face proctor implementation.
+        //
+        // Not an exam-integrity event - nobody declined anything - but the run
+        // is still not being watched, and the score has to say so.
         _faceUnsupported = true;
+        _setWatching(false);
         _showProctorNotice(
           'Face detection anti-cheat is available only on Android/iOS.',
         );
@@ -212,8 +243,8 @@ class _GameSecurityOverlayState extends State<GameSecurityOverlay>
     // Do not retry for the rest of this screen's life: a denied permission
     // would otherwise re-prompt on every pause/resume cycle.
     _faceUnsupported = true;
+    _setWatching(false);
     _showProctorNotice(message);
-    widget.onProctoringUnavailable?.call();
   }
 
   void _showProctorNotice(String message) {

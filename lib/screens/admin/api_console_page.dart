@@ -12,17 +12,23 @@ import '../../utils/responsive_layout.dart';
 import '../../widgets/offline_banner.dart';
 import '../../widgets/source_link.dart';
 
-/// Live API test bench for the admin panel.
+/// The "Connection Check" screen: can this app reach everything it needs?
 ///
-/// The import screen proves GET and POST as a side effect of doing real work.
-/// This screen exists to exercise the whole HTTP surface deliberately and in
-/// one place — **GET, POST, PATCH, and DELETE** — printing the exact request
-/// and response for each, so the integration can be demonstrated and captured
-/// without hunting through six different screens.
+/// It exercises the whole HTTP surface deliberately and in one place — GET,
+/// POST, PATCH, and DELETE — so the integration can be checked without hunting
+/// through six different screens.
 ///
 /// The write half runs a full lifecycle against a single throwaway document:
 /// create it (POST), edit it (PATCH), search for it (POST runQuery), then
 /// remove it (DELETE). Nothing is left behind in the question bank.
+///
+/// The screen used to print the exact request and response for every step —
+/// method badges, live URLs, and pretty-printed Firestore envelopes in dark
+/// code blocks. The people who actually run this are teachers checking that
+/// the app works, not developers debugging it, so the page now answers only
+/// "did it work, and if not what do I do?". Every one of those details is
+/// still captured and is one tap away in the toolbar's copy action, for a
+/// failure that has to be passed on to somebody who does want the JSON.
 class ApiConsolePage extends StatefulWidget {
   const ApiConsolePage({super.key});
 
@@ -120,7 +126,7 @@ class _ApiConsolePageState extends State<ApiConsolePage> {
     // backing out mid-run makes the in-flight request throw, the current step
     // return early, and the next step land here on a dead State.
     if (!mounted) return null;
-    setState(() => _currentStep = label);
+    setState(() => _currentStep = purpose.isEmpty ? label : purpose);
     final watch = Stopwatch()..start();
 
     try {
@@ -172,7 +178,7 @@ class _ApiConsolePageState extends State<ApiConsolePage> {
   Future<void> _confirmAndRunAll() async {
     final confirmed = await confirmAdminAction(
       context,
-      title: 'Run the API check?',
+      title: 'Run the connection check?',
       message:
           'This makes real calls to the live database: it creates one test '
           'question, edits it, searches for it, then deletes it. The test '
@@ -378,7 +384,7 @@ class _ApiConsolePageState extends State<ApiConsolePage> {
     Clipboard.setData(ClipboardData(text: buffer.toString()));
     // Was a raw ScaffoldMessenger call, so it stacked instead of replacing the
     // previous snack and missed the shared icon/duration treatment.
-    showAdminSnack(context, 'Full API log copied to the clipboard.');
+    showAdminSnack(context, 'Report copied to the clipboard.');
   }
 
   @override
@@ -392,7 +398,7 @@ class _ApiConsolePageState extends State<ApiConsolePage> {
       actions: [
         if (_results.isNotEmpty)
           IconButton(
-            tooltip: 'Copy the full technical log',
+            tooltip: 'Copy a report to send for help',
             onPressed: _copyLog,
             icon: const Icon(Icons.copy_all_rounded),
           ),
@@ -402,7 +408,7 @@ class _ApiConsolePageState extends State<ApiConsolePage> {
           const OfflineBanner(
             blocking: true,
             message:
-                'The API console makes live HTTP calls, so it needs a connection.',
+                'This check talks to the internet, so it needs a connection.',
           ),
           Expanded(
             // This was the one admin page with no width cap, so on a wide
@@ -445,7 +451,7 @@ class _ApiConsolePageState extends State<ApiConsolePage> {
                     child: AdminStateView.loading(
                       _currentStep.isEmpty
                           ? 'Starting...'
-                          : 'Checking: $_currentStep',
+                          : _currentStep,
                     ),
                   ),
               ],
@@ -460,11 +466,11 @@ class _ApiConsolePageState extends State<ApiConsolePage> {
   }
 
   Widget _intro() {
-    return AdminPanel(
+    return const AdminPanel(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const AdminSectionHeader(
+          AdminSectionHeader(
             icon: Icons.lan_rounded,
             title: 'What this does',
             caption:
@@ -474,42 +480,42 @@ class _ApiConsolePageState extends State<ApiConsolePage> {
                 'finds it, then deletes it again. Your real questions are never '
                 'touched, and students never see the test question.',
           ),
-          const SizedBox(height: 12),
-          const _PlainStep(
+          SizedBox(height: 12),
+          _PlainStep(
             number: 1,
             text: 'Borrow ready-made questions from the trivia library.',
           ),
-          const _PlainStep(
+          _PlainStep(
             number: 2,
             text: 'Look up a word, the way the in-game dictionary does.',
           ),
-          const _PlainStep(
+          _PlainStep(
             number: 3,
             text: 'Save a new question into your question bank.',
           ),
-          const _PlainStep(
+          _PlainStep(
             number: 4,
             text: 'Edit that question.',
           ),
-          const _PlainStep(
+          _PlainStep(
             number: 5,
             text: 'Change only its published setting, leaving the rest alone.',
           ),
-          const _PlainStep(
+          _PlainStep(
             number: 6,
             text: 'Search the question bank and read the matches back.',
           ),
-          const _PlainStep(
+          _PlainStep(
             number: 7,
             text: 'Delete the test question so nothing is left behind.',
           ),
-          const _PlainStep(
+          _PlainStep(
             number: 8,
             text: 'Deliberately ask for something that does not exist, to '
                 'check the app handles mistakes without crashing.',
           ),
-          const Divider(height: 22),
-          const Text(
+          Divider(height: 22),
+          Text(
             'The two question and word services are public and free:',
             style: TextStyle(
               fontSize: 12.5,
@@ -517,129 +523,18 @@ class _ApiConsolePageState extends State<ApiConsolePage> {
               color: AdminPalette.muted,
             ),
           ),
-          const SizedBox(height: 4),
-          const SourceLink(
+          SizedBox(height: 4),
+          SourceLink(
             url: 'https://opentdb.com',
             label: 'Open Trivia Database',
             description: 'Where the borrowed quiz questions come from.',
           ),
-          const SourceLink(
+          SourceLink(
             url: 'https://dictionaryapi.dev',
             label: 'Free Dictionary API',
             description: 'Where in-game word definitions come from.',
           ),
-          const Divider(height: 22),
-          const Text(
-            'Technical detail',
-            style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w900),
-          ),
-          const SizedBox(height: 8),
-          _endpointRow('GET', 'opentdb.com/api.php', 'Fetch trivia questions'),
-          _endpointRow(
-            'GET',
-            'api.dictionaryapi.dev/.../entries/en/{word}',
-            'Look up a word',
-          ),
-          _endpointRow(
-            'POST',
-            'firestore.../documents/quiz_questions',
-            'Create a question',
-          ),
-          _endpointRow(
-            'PATCH',
-            'firestore.../quiz_questions/{id}',
-            'Update a question',
-          ),
-          _endpointRow(
-            'POST',
-            'firestore.../documents:runQuery',
-            'Search questions',
-          ),
-          _endpointRow(
-            'DELETE',
-            'firestore.../quiz_questions/{id}',
-            'Delete a question',
-          ),
         ],
-      ),
-    );
-  }
-
-  Widget _endpointRow(String method, String url, String purpose) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(width: 72, child: _methodBadge(method)),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  url,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    fontFamily: 'monospace',
-                    color: AdminPalette.ink,
-                  ),
-                ),
-                Text(
-                  purpose,
-                  style: const TextStyle(
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w600,
-                    color: AdminPalette.muted,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Color _methodColor(String method) {
-    return switch (method) {
-      'GET' => AdminPalette.info,
-      'POST' => AdminPalette.success,
-      'PATCH' => AdminPalette.warning,
-      'DELETE' => AdminPalette.danger,
-      _ => AdminPalette.muted,
-    };
-  }
-
-  Widget _methodBadge(String method) {
-    final color = _methodColor(method);
-    // Reads as "HTTP method GET" rather than the bare letters, which a screen
-    // reader would otherwise spell out with no context.
-    return Semantics(
-      label: 'HTTP method $method',
-      excludeSemantics: true,
-      child: _methodBadgeBody(method, color),
-    );
-  }
-
-  Widget _methodBadgeBody(String method, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.13),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color, width: 1.6),
-      ),
-      child: Text(
-        method,
-        style: TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w900,
-          color: color,
-          letterSpacing: 0.4,
-        ),
       ),
     );
   }
@@ -688,7 +583,7 @@ class _ApiConsolePageState extends State<ApiConsolePage> {
             ? 'Nothing could be reached. This is almost always the internet '
                 'connection - check Wi-Fi and try again.'
             : '${problems.length} of ${_results.length} checks did not work. '
-                'Open the red rows below to see what went wrong.';
+                'The red rows below say what went wrong, and what to try.';
 
     return Container(
       width: double.infinity,
@@ -749,61 +644,64 @@ class _ApiConsolePageState extends State<ApiConsolePage> {
             ? 'Failed on purpose, as expected'
             : 'Worked';
 
+    // Was an ExpansionTile hiding four blocks of raw JSON, URLs and the
+    // internal step name. Nobody running this needs to read a Firestore typed
+    // envelope to find out whether the app can reach the internet, and the one
+    // thing they might need - what to do about a failure - was buried behind a
+    // tap. The full request and response are still one button away in the
+    // toolbar's copy action, for when a failure has to be sent on to somebody.
     return AdminPanel(
-      padding: EdgeInsets.zero,
       borderColor: color,
-      child: Theme(
-        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-        child: ExpansionTile(
-          tilePadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-          childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
-          leading: Icon(
-            problem
-                ? Icons.error_rounded
-                : result.failureExpected
-                    ? Icons.shield_moon_rounded
-                    : Icons.check_circle_rounded,
-            color: color,
-            size: 26,
-          ),
-          title: Text(
-            result.purpose.isEmpty ? result.label : result.purpose,
-            style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w800,
-              height: 1.3,
-            ),
-          ),
-          subtitle: Padding(
-            padding: const EdgeInsets.only(top: 3),
-            child: Text(
-              problem
-                  ? '$status - ${result.error}'
-                  : '$status - took ${result.elapsed.inMilliseconds} ms',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                problem
+                    ? Icons.error_rounded
+                    : result.failureExpected
+                        ? Icons.shield_moon_rounded
+                        : Icons.check_circle_rounded,
                 color: color,
+                size: 26,
               ),
-            ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      result.purpose.isEmpty ? result.label : result.purpose,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                        height: 1.3,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      problem ? '$status - ${result.error}' : status,
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700,
+                        color: color,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
-          trailing: SizedBox(width: 66, child: _methodBadge(result.method)),
-          children: [
-            if (problem) _troubleshooting(result),
-            _codeBlock('Technical name', result.label),
-            _codeBlock('Address it called', result.url),
-            if (result.requestBody.isNotEmpty)
-              _codeBlock('What was sent', result.requestBody),
-            if (result.responseBody.isNotEmpty)
-              _codeBlock('What came back', result.responseBody),
-          ],
-        ),
+          if (problem) _troubleshooting(result),
+        ],
       ),
     );
   }
 
-  /// Turns a failure into something actionable. The raw message is already on
-  /// the card; this says what to actually do about it.
+  /// Turns a failure into something actionable. The card already says what
+  /// went wrong; this says what to actually do about it.
   Widget _troubleshooting(_StepResult result) {
     final code = result.statusCode;
     final advice = switch (code) {
@@ -850,65 +748,6 @@ class _ApiConsolePageState extends State<ApiConsolePage> {
     );
   }
 
-  Widget _codeBlock(String label, String content) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Text(
-                label,
-                style: const TextStyle(
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.w900,
-                  color: AdminPalette.muted,
-                  letterSpacing: 0.3,
-                ),
-              ),
-              const Spacer(),
-              IconButton(
-                iconSize: 18,
-                // `VisualDensity.compact` took this to roughly 40x40, under
-                // the 48dp minimum touch target.
-                constraints: const BoxConstraints(
-                  minWidth: 48,
-                  minHeight: 48,
-                ),
-                tooltip: 'Copy $label',
-                onPressed: () {
-                  Clipboard.setData(ClipboardData(text: content));
-                  showAdminSnack(context, '$label copied.');
-                },
-                icon: const Icon(Icons.copy_rounded),
-              ),
-            ],
-          ),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: AdminPalette.codeBg,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Text(
-                content,
-                style: const TextStyle(
-                  fontFamily: 'monospace',
-                  fontSize: 11.5,
-                  height: 1.45,
-                  color: AdminPalette.codeFg,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 

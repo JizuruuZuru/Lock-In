@@ -84,8 +84,8 @@ active admin cannot be demoted or deactivated.
 | ☑ | **POST** Requests Tested | ✅ | `FirestoreRestApi.createQuestion` (create) and `.runQuestionQuery` (search). Unit tests in `test/firestore_rest_api_test.dart` |
 | ☑ | **PUT/PATCH** Requests Tested | ✅ | `FirestoreRestApi.updateQuestion` and `.setPublished` — HTTP **PATCH** with an explicit `updateMask`. 6 unit tests |
 | ☑ | **DELETE** Requests Tested | ✅ | `FirestoreRestApi.deleteQuestion` — HTTP **DELETE**. 4 unit tests |
-| ☑ | API Responses Properly Displayed | ✅ | API Console shows every exchange as an expandable card with copyable bodies; importer preview table; JSON inspector; dictionary sheet |
-| ☑ | Error Responses Properly Handled | ✅ | [`ApiException`](../lib/services/api/api_exception.dart) — see the table in [API_INTEGRATION.md §6](API_INTEGRATION.md#6-loading-states-and-error-handling). Two deliberate failure cases in the console prove it |
+| ☑ | API Responses Properly Displayed | ✅ | Connection Check reports every step in plain language and copies the full transcript (method, URL, status, duration, both bodies) to the clipboard; importer preview table; JSON inspector; dictionary sheet |
+| ☑ | Error Responses Properly Handled | ✅ | [`ApiException`](../lib/services/api/api_exception.dart) — see the table in [API_INTEGRATION.md §6](API_INTEGRATION.md#6-loading-states-and-error-handling). Two deliberate failure cases in the Connection Check prove it, each with status-code-specific advice |
 | ☑ | Authentication / Authorization Implemented | ✅ | Every backend call carries `Authorization: Bearer <Firebase ID token>`, checked against the same [`firestore.rules`](../firestore.rules) that guard the SDK. Sign in as a student to see the 403 |
 | ☑ | API Documentation Available | ✅ | [API_INTEGRATION.md](API_INTEGRATION.md) — endpoints, implementation, JSON samples for every verb, error table, testing |
 

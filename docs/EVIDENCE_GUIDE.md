@@ -104,18 +104,25 @@ strongest CRUD evidence you can produce.
 
 | # | File name | What | Path | Must be visible |
 |:--:|---|---|---|---|
-| 29 | `29-api-console-idle.png` | Endpoints | Dashboard → **API Console** | The endpoint list with all four method badges — GET, POST, PATCH, DELETE |
+| 29 | `29-api-console-idle.png` | What it checks | Dashboard → **Connection Check** | The numbered list of the eight steps the run performs |
 | 30 | `30-api-console-running.png` | Loading state | Tap "Run all requests", shoot immediately | The spinner and the "Running: …" caption naming the current step |
 | 31 | `31-api-console-summary.png` | Connection established | Wait for the run to finish | The "N succeeded" chip and the full list of result cards |
-| 32 | `32-api-get.png` | **GET tested** | Expand a GET card | The URL and the JSON response body |
-| 33 | `33-api-post.png` | **POST tested** | Expand the POST card | The typed-envelope request body **and** the response with `name` and `createTime` |
-| 34 | `34-api-patch.png` | **PATCH tested** | Expand the PATCH card | The URL showing `updateMask.fieldPaths=…` and the response with a moved `updateTime` |
-| 35 | `35-api-delete.png` | **DELETE tested** | Expand the DELETE card | HTTP 200 and the `{}` response |
-| 36 | `36-api-error.png` | **Error handled** | Expand an "expected failure" card | The red badge and the plain-language message |
+| 32 | `32-api-get.png` | **GET tested** | Copy action → paste into a text file | The GET sections — URL and JSON response body |
+| 33 | `33-api-post.png` | **POST tested** | Same transcript | The POST section — typed-envelope request body **and** the response with `name` and `createTime` |
+| 34 | `34-api-patch.png` | **PATCH tested** | Same transcript | The PATCH section — the URL showing `updateMask.fieldPaths=…` and the response with a moved `updateTime` |
+| 35 | `35-api-delete.png` | **DELETE tested** | Same transcript | The DELETE section — HTTP 200 and the `{}` response |
+| 36 | `36-api-error.png` | **Error handled** | The "expected failure" card on screen | The plain-language message and the advice box |
 | 37 | `37-api-import.png` | Responses displayed | Dashboard → Import from Open Trivia DB → Fetch | The preview table — correct answers green, duplicates greyed out |
 | 38 | `38-api-json-inspector.png` | JSON sample | Import screen → `{ }` in the app bar | The raw GET response and the last POST request/response |
 | 39 | `39-api-offline.png` | Error handled | Turn Wi-Fi off → tap "Fetch questions" | The failure state **and its Try again button** |
-| 40 | `40-api-auth.png` | Authorization | Sign in as a **student**, reach the API console | The 403 — proving the rules apply to REST calls, not just the SDK |
+| 40 | `40-api-auth.png` | Authorization | Sign in as a **student**, reach the Connection Check | The 403 in the copied transcript — proving the rules apply to REST calls, not just the SDK |
+
+**Shots 32–35 come from the copied report, not the screen.** The Connection
+Check page deliberately shows no URLs or JSON — it is written for a teacher
+checking the app works, not for reading a Firestore envelope. Run the check, tap
+the copy icon in the app bar, paste into a text editor, and screenshot the
+relevant section. Every method, URL, status code, duration, request body and
+response body is in there, in the order the steps ran.
 
 ### API testing logs (Section F: "API Testing Screenshots/Logs")
 
@@ -226,7 +233,7 @@ A 5-minute run that hits every requirement in order:
 | 2:45 | Sign out, sign in as admin. Land on the dashboard. | Role-based routing, security |
 | 3:00 | Create a question. Show the live preview. Save. Edit it. Delete it. | **Full CRUD** |
 | 4:00 | Import from Open Trivia DB — fetch, preview, publish. | API GET + POST |
-| 4:30 | Open the API Console. Run all requests. Expand PATCH and DELETE. | **All four HTTP verbs**, responses displayed, errors handled |
+| 4:30 | Open the Connection Check. Run it. Copy the report and paste it. | **All four HTTP verbs**, responses displayed, errors handled |
 | 5:00 | Turn Wi-Fi off. Show the offline banner and a queued write. | Offline resilience, error handling |
 
 **Rehearse the offline step** — it is the most impressive and the most likely to

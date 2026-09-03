@@ -41,6 +41,7 @@ import '../../models/app_user_record.dart';
 import '../../services/app_settings_service.dart';
 import '../../services/connectivity_service.dart';
 import '../../services/custom_question_sync.dart';
+import '../../services/player_proctoring_preference.dart';
 import '../../services/proctoring_settings.dart';
 import '../../services/google_link_service.dart';
 import '../../services/leaderboard_service.dart';
@@ -2497,6 +2498,129 @@ class _HomeMenuState extends State<HomeMenu> {
     );
   }
 
+  /// The player's own half of the camera anti-cheat decision.
+  ///
+  /// The teacher's switch still gates it: when they have the camera off for
+  /// both exams and lessons there is nothing here to choose, so this says so
+  /// rather than offering a switch that would change nothing. Within what the
+  /// teacher allows a player may say no - and the leaderboard shows which
+  /// scores were set with the camera on, so saying no is visible rather than
+  /// secret. That visibility is what makes the choice safe to offer at all.
+  Widget _buildCameraPreferenceCard() {
+    return ValueListenableBuilder<ProctoringConfig>(
+      valueListenable: ProctoringSettings.instance.config,
+      builder: (context, config, _) {
+        final teacherAllows =
+            config.faceProctorExams || config.faceProctorLessons;
+
+        return ValueListenableBuilder<bool>(
+          valueListenable: PlayerProctoringPreference.instance.optedIn,
+          builder: (context, optedIn, _) {
+            final on = teacherAllows && optedIn;
+
+            final String caption;
+            if (!teacherAllows) {
+              caption = 'Your teacher has the camera turned off for everyone '
+                  'right now, so your scores will show "Camera off".';
+            } else if (on) {
+              caption = 'The front camera checks you are there while you play. '
+                  'Scores you set this way show a "Camera on" badge on the '
+                  'leaderboard.';
+            } else {
+              caption = 'The camera stays off. Scores you set will show '
+                  '"Camera off" on the leaderboard.';
+            }
+
+            return Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: _accentColor.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: _accentColor, width: 2),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        on
+                            ? Icons.videocam_rounded
+                            : Icons.videocam_off_rounded,
+                        size: 22,
+                        color: const Color(0xFF2F5233),
+                      ),
+                      const SizedBox(width: 10),
+                      const Expanded(
+                        child: Text(
+                          'Camera anti-cheat',
+                          style: TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                      Switch(
+                        value: on,
+                        // Nothing to choose when the teacher has it off
+                        // everywhere, so the switch is shown in its real
+                        // position and disabled rather than hidden.
+                        onChanged: teacherAllows ? _setCameraOptIn : null,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    caption,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      height: 1.35,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  /// Confirms only when the camera is being turned *off*. Turning it back on
+  /// is always the safe direction, and asking twice for that just trains a
+  /// child to tap straight through the dialog.
+  Future<void> _setCameraOptIn(bool value) async {
+    SoundService().playButtonSoundNow();
+
+    if (!value) {
+      final confirmed = await showDialog<bool>(
+            context: context,
+            builder: (_) => const _CameraOptOutDialog(),
+          ) ??
+          false;
+      if (!confirmed || !mounted) return;
+    }
+
+    await PlayerProctoringPreference.instance.setOptedIn(value);
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(
+            value
+                ? 'Camera on. Scores you set from now on show a "Camera on" '
+                    'badge.'
+                : 'Camera off. Scores you set from now on show "Camera off".',
+          ),
+          backgroundColor:
+              value ? const Color(0xFF2E7D32) : const Color(0xFF8A6100),
+        ),
+      );
+  }
+
   Widget _buildSettings() {
     final displayName = userData?['username'] ?? 'Guest User';
     final email = user?.email ?? 'Not logged in';
@@ -2552,6 +2676,8 @@ class _HomeMenuState extends State<HomeMenu> {
                   if (user != null)
                     Column(
                       children: [
+                        _buildCameraPreferenceCard(),
+                        const SizedBox(height: 20),
                         SizedBox(
                           width: double.infinity,
                           child: ElevatedButton(
@@ -2572,6 +2698,7 @@ class _HomeMenuState extends State<HomeMenu> {
                                 resetPlayerNameCache();
                                 await CustomQuestionSync.instance.stop();
                                 await ProctoringSettings.instance.stop();
+                                PlayerProctoringPreference.instance.reset();
                                 await _auth.signOut();
                                 if (!mounted) return;
                                 // Back to the start screen, which asks again
@@ -2710,6 +2837,113 @@ class _HomeMenuState extends State<HomeMenu> {
 // ---------------------------------------------------------------------
 // Sign‑Out Confirmation Dialog – exact replica of LeaveWarningOverlay
 // ---------------------------------------------------------------------
+/// Asks once before a player turns the camera off, so the leaderboard
+/// consequence is stated before it happens rather than discovered afterwards.
+class _CameraOptOutDialog extends StatelessWidget {
+  const _CameraOptOutDialog();
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Container(
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFF3E0),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: const Color(0xFF8A6100), width: 2.2),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.videocam_off_rounded,
+              color: Color(0xFF8A6100),
+              size: 52,
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Turn the camera off?',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.w900,
+                color: Color(0xFF3E2723),
+              ),
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              'You can still play everything. Scores you set will show '
+              '"Camera off" on the leaderboard, so everyone can see they were '
+              'not checked.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF4E342E),
+                height: 1.35,
+              ),
+            ),
+            const SizedBox(height: 18),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () {
+                      SoundService().playButtonSoundNow();
+                      Navigator.of(context).pop(false);
+                    },
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size.fromHeight(50),
+                      side: const BorderSide(
+                        color: Color(0xFF6D4C41),
+                        width: 2,
+                      ),
+                      foregroundColor: const Color(0xFF4E342E),
+                      textStyle: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                    child: const Text('Keep it on'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () {
+                      SoundService().playButtonSoundNow();
+                      Navigator.of(context).pop(true);
+                    },
+                    style: ElevatedButton.styleFrom(
+                      minimumSize: const Size.fromHeight(50),
+                      backgroundColor: const Color(0xFF8A6100),
+                      foregroundColor: Colors.white,
+                      textStyle: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      elevation: 0,
+                    ),
+                    child: const Text('Turn it off'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _SignOutConfirmationDialog extends StatefulWidget {
   const _SignOutConfirmationDialog();
 

@@ -136,7 +136,9 @@ These Terms and Conditions govern your use of our brain training application. By
    - Your data may be used for anonymized analytics to enhance user experience.
 
 3. **Fair Play and Anti-Cheat**
-   - The app uses face detection (front camera) to ensure you are present during games. This feature is optional but recommended for fair play.
+   - The app can use face detection (front camera) to check you are present during games. Your teacher decides whether it is available, and you can turn it off for yourself under Camera anti-cheat in your profile settings.
+   - The camera is only used to check that a face is present. No photo or video is recorded, stored, or sent anywhere.
+   - Scores are labelled on the leaderboard with whether the camera was on, so playing without it is allowed but visible to everyone.
    - Attempting to cheat or exploit the system may result in account suspension.
 
 4. **Leaderboards and Public Profiles**

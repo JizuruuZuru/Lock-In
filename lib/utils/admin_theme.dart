@@ -41,7 +41,8 @@ class AdminPalette {
   /// Background for a row that is disabled, unpublished, or otherwise inactive.
   static const Color surfaceMuted = Color(0xFFF2F0F7);
 
-  /// The API console's code blocks, the one place the admin area inverts.
+  /// The import screen's JSON inspector, the one place the admin area inverts.
+  /// The Connection Check used to share this; it no longer shows raw bodies.
   static const Color codeBg = Color(0xFF11121A);
   static const Color codeFg = Color(0xFFD7E3FF);
 

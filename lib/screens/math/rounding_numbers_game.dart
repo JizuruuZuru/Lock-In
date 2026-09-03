@@ -3,7 +3,7 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 
-import '../../services/proctoring_settings.dart';
+import '../../services/player_proctoring_preference.dart';
 import '../../services/game_result_recorder.dart';
 import '../../services/game_logger.dart';
 import '../../services/face_proctor_contract.dart';
@@ -61,10 +61,14 @@ class _RoundingNumbersGameState extends State<RoundingNumbersGame> {
   bool _showExitConfirmation = false;
   final GameSaveGate _saveGate = GameSaveGate();
 
-  /// Whether this run is actually being watched. Set false when proctoring was
-  /// wanted but the camera could not be used, so the saved score records that a
-  /// teacher was not watching this attempt.
-  bool _runProctored = true;
+  /// Whether the camera is actually watching this run.
+  ///
+  /// Starts false and is set by [GameSecurityOverlay.onProctorWatchingChanged]
+  /// once the start attempt resolves, so the saved score - and the leaderboard
+  /// badge it feeds - tells the truth in every case: the teacher switched
+  /// proctoring off, the player declined it in their own settings, or the
+  /// camera could not be opened.
+  bool _runProctored = false;
 
   int score = 0;
   int _levelPoints = 0;
@@ -499,9 +503,8 @@ class _RoundingNumbersGameState extends State<RoundingNumbersGame> {
                 ),
               ),
               GameSecurityOverlay(
-                      enableFaceProctor:
-                          ProctoringSettings.instance.enabledFor(isExam: false),
-                      onProctoringUnavailable: () => _runProctored = false,
+                      enableFaceProctor: faceProctorEnabledFor(isExam: false),
+                      onProctorWatchingChanged: (watching) => _runProctored = watching,
                       faceProctor: _faceProctor,
                       gameName: _gameName,
                       isActive: hasStarted && !isGameOver && !showCorrectSplash && !showIncorrectSplash && !_showExitConfirmation,

@@ -11,6 +11,7 @@ import 'screens/home/home_menu.dart';
 import 'screens/onboarding/player_onboarding_page.dart';
 import 'services/custom_question_sync.dart';
 import 'services/leaderboard_service.dart';
+import 'services/player_proctoring_preference.dart';
 import 'services/proctoring_settings.dart';
 import 'utils/admin_theme.dart';
 import 'widgets/animated_shape_background.dart';
@@ -71,6 +72,13 @@ class _AppGateState extends State<AppGate> {
     // proctoring-on default, stands until Firestore answers.
     unawaited(ProctoringSettings.instance.start().catchError((Object _) {}));
 
+    // The player's own half of the same decision. Awaited, unlike the two
+    // above, because it is a local `shared_preferences` read rather than a
+    // network one, and because a game screen reads it on its first frame - an
+    // unresolved read would silently mean "camera on" for whoever opened a
+    // game fastest. It never throws, so there is nothing to catch.
+    await PlayerProctoringPreference.instance.loadFor(user.uid);
+
     Map<String, dynamic> data = <String, dynamic>{};
     try {
       final snapshot =
@@ -108,6 +116,7 @@ class _AppGateState extends State<AppGate> {
       resetPlayerNameCache();
       await CustomQuestionSync.instance.stop();
       await ProctoringSettings.instance.stop();
+      PlayerProctoringPreference.instance.reset();
       await auth.signOut();
       return _GateResult(route: _GateRoute.disabled, user: user, record: record);
     }

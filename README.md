@@ -202,16 +202,24 @@ The app is built for a school connection that comes and goes:
 
 - **Face proctoring is mobile-only** — it needs a front camera and ML Kit. On
   desktop and web the exam runs unproctored; the app-leave detector still works.
-- **Face proctoring is optional, and a teacher owns the switch.** Admin Panel →
-  **Exam Security** turns it on or off separately for exams and for lessons. It
+- **Face proctoring has two switches, and both must say yes.** Admin Panel →
+  **Exam Security** is the teacher's, separately for exams and for lessons; it
   is stored in Firestore so one decision reaches every device, and cached on
-  each device so it is still right on a cold offline launch. It is deliberately
-  not in the player's own settings — a student who could reach it would simply
-  turn it off.
+  each device so it is still right on a cold offline launch. **Camera
+  anti-cheat**, in the player's own profile settings, is the student's, and can
+  only decline within what the teacher already allows — it never switches the
+  camera back on. `faceProctorEnabledFor(isExam:)` is the single expression the
+  game screens ask, so the two can never drift apart at one call site.
+- **Opting out is allowed, but never secret.** A score set with the camera off
+  is written with `proctored: false` and carries a grey **Camera off** badge on
+  the leaderboard, next to the **Camera on** badges of the scores that were
+  watched. That visibility is what makes a student-reachable switch safe for an
+  anti-cheat feature. Rows saved before the badge existed have no stored value
+  and show no badge, rather than being labelled either way.
 - **A missing camera never blocks a child.** If the device has no front camera,
-  or the camera prompt is declined, the game still runs; the attempt is recorded
-  with `proctored: false` so a teacher can tell watched runs from unwatched
-  ones.
+  or the camera prompt is declined, or the platform has no face detection at
+  all, the game still runs; the attempt is recorded with `proctored: false`, so
+  a teacher can tell watched runs from unwatched ones.
 - **Only face *presence* is checked, not orientation.** The yaw/pitch limits are
   set wide enough to accept any detectable face, so looking away from the screen
   is not treated as cheating — only leaving the camera's view is. See the note

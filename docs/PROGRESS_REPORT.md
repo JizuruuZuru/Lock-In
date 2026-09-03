@@ -69,7 +69,7 @@ milestone.
   promote another admin, deactivate an account, with search and role filter.
 - **Bulk import** from Open Trivia DB with duplicate detection, difficulty →
   level mapping, and a preview table with checkboxes.
-- **API console** exercising the entire HTTP surface with full request and
+- **Connection Check** exercising the entire HTTP surface with full request and
   response inspection.
 
 ### 2.4 Data and access control — complete
@@ -121,15 +121,22 @@ misleading comment was corrected.
 
 ### 3.3 API Console screen — new
 
-`lib/screens/admin/api_console_page.dart`. Runs every endpoint the app uses in
-order — GET, POST, PATCH, runQuery, DELETE — against one throwaway document that
-it deletes at the end, and shows each exchange as an expandable card with method
-badge, URL, status, duration, and copyable request and response bodies. Includes
-two deliberate failure cases so the error paths are visible too.
+`lib/screens/admin/api_console_page.dart`, shown as **Connection Check**. Runs
+every endpoint the app uses in order — GET, POST, PATCH, runQuery, DELETE —
+against one throwaway document that it deletes at the end. Includes two
+deliberate failure cases so the error paths are visible too.
+
+On screen it answers only the two questions its audience has: did each step
+work, and if not what should I do? The cards carry a plain-English purpose, a
+worked / did-not-work line, and troubleshooting advice on a failure. It
+originally printed method badges, live URLs and pretty-printed Firestore
+envelopes in dark code blocks; a teacher checking the app works has no use for
+those, so they moved entirely into the toolbar's copy action, which still
+captures method, URL, status, duration and both bodies for all eight steps.
 
 This turns "API responses properly displayed" and "error responses properly
-handled" from something spread across several screens into a single capturable
-view.
+handled" from something spread across several screens into a single run and a
+single pasted transcript.
 
 ### 3.4 Command-line tooling — new
 

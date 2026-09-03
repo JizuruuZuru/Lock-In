@@ -4,7 +4,7 @@ import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import '../../services/proctoring_settings.dart';
+import '../../services/player_proctoring_preference.dart';
 import '../../services/leaderboard_service.dart';
 import '../../services/game_logger.dart';
 
@@ -74,9 +74,13 @@ class _MathGameState extends State<MathGame> with WidgetsBindingObserver {
   final FaceProctorService _faceProctor = createFaceProctorService();
   bool _isProctorActive = false;
 
-  /// Whether this run is actually being watched. False when proctoring was
-  /// wanted but the camera could not be used, so the saved score can say so.
-  bool _runProctored = true;
+  /// Whether the camera is actually watching this run.
+  ///
+  /// Starts false and is set true only by a clean camera start, so the saved
+  /// score - and the leaderboard badge it feeds - tells the truth in every
+  /// case: the teacher switched proctoring off, the player declined the
+  /// camera in their own settings, or it could not be opened.
+  bool _runProctored = false;
 
   // 🔥 duplicate prevention
   bool _isSavingScore = false;
@@ -112,7 +116,7 @@ class _MathGameState extends State<MathGame> with WidgetsBindingObserver {
 
   Future<bool> _startFaceProctor() async {
     if (selectedMode == null) return false;
-    if (!ProctoringSettings.instance.enabledFor(isExam: false)) return false;
+    if (!faceProctorEnabledFor(isExam: false)) return false;
     if (_isProctorActive) return true;
 
     // Claimed before the await. `start()` takes hundreds of milliseconds on
@@ -156,9 +160,9 @@ class _MathGameState extends State<MathGame> with WidgetsBindingObserver {
     await _stopFaceProctor();
 
     // Reset before the check below, not in the setState after it: the check is
-    // what discovers the camera is unusable, and clearing the flag afterwards
-    // would throw that answer away.
-    _runProctored = true;
+    // what decides whether the camera actually opens, and clearing the flag
+    // afterwards would throw that answer away.
+    _runProctored = false;
 
     final monitoringReady = await _ensureFaceMonitoringForMode(mode);
     if (!monitoringReady || !mounted) return;
@@ -192,10 +196,11 @@ class _MathGameState extends State<MathGame> with WidgetsBindingObserver {
   }
 
   Future<bool> _ensureFaceMonitoringForMode(MathMode mode) async {
-    // A teacher can switch lesson proctoring off for the whole class; when
-    // they have, the camera is never opened and the run is not marked
-    // unwatched - nobody expected it to be watched.
-    if (!ProctoringSettings.instance.enabledFor(isExam: false)) return true;
+    // Either the teacher switched lesson proctoring off for the whole class,
+    // or this player turned the camera off in their own settings. Nothing is
+    // opened, and `_runProctored` stays false, so the score records that the
+    // camera was not watching.
+    if (!faceProctorEnabledFor(isExam: false)) return true;
 
     // Claimed before the await for the same reason as _startFaceProctor: this
     // takes hundreds of milliseconds, and a dispose during that window used to
@@ -230,6 +235,7 @@ class _MathGameState extends State<MathGame> with WidgetsBindingObserver {
 
     switch (status) {
       case FaceProctorStartStatus.started:
+        _runProctored = true;
         return true;
       case FaceProctorStartStatus.unsupportedPlatform:
         if (!_faceSupportNoticeShown) {
@@ -903,6 +909,7 @@ class _MathGameState extends State<MathGame> with WidgetsBindingObserver {
           gameName: _gameNameFor(selectedMode!),
           newScore: score,
           difficulty: gameDifficultyModeLabel(_selectedMode),
+          proctored: _runProctored,
         );
       }
     } catch (e) {

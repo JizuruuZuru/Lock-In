@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
-import '../../services/proctoring_settings.dart';
+import '../../services/player_proctoring_preference.dart';
 import '../../services/game_result_recorder.dart';
 import '../../services/game_logger.dart';
 import '../../services/face_proctor_contract.dart';
@@ -65,9 +65,13 @@ class _NumberMemoryGameState extends State<NumberMemoryGame>
   final FaceProctorService _faceProctor = createFaceProctorService();
   bool _isProctorActive = false;
 
-  /// Whether this run is actually being watched. False when proctoring was
-  /// wanted but the camera could not be used.
-  bool _runProctored = true;
+  /// Whether the camera is actually watching this run.
+  ///
+  /// Starts false and is set true only by a clean camera start, so the saved
+  /// score - and the leaderboard badge it feeds - tells the truth in every
+  /// case: the teacher switched proctoring off, the player declined the
+  /// camera in their own settings, or it could not be opened.
+  bool _runProctored = false;
 
   // 🔥 duplicate prevention
   final GameSaveGate _saveGate = GameSaveGate();
@@ -103,7 +107,7 @@ class _NumberMemoryGameState extends State<NumberMemoryGame>
   }
 
   Future<bool> _startFaceProctor() async {
-    if (!ProctoringSettings.instance.enabledFor(isExam: false)) return false;
+    if (!faceProctorEnabledFor(isExam: false)) return false;
     if (_isProctorActive) return true;
 
     // Claimed before the await. `start()` takes hundreds of milliseconds on
@@ -183,9 +187,10 @@ class _NumberMemoryGameState extends State<NumberMemoryGame>
   Future<void> startGame() async {
     await _stopFaceProctor();
 
-    // Reset before the check below: the check is what discovers the camera is
-    // unusable, so clearing the flag after it would throw that answer away.
-    _runProctored = true;
+    // Reset before the check below: the check is what decides whether the
+    // camera actually opens, so clearing the flag after it would throw that
+    // answer away.
+    _runProctored = false;
 
     final monitoringReady = await _ensureFaceMonitoring();
     if (!monitoringReady || !mounted) return;
@@ -212,10 +217,11 @@ class _NumberMemoryGameState extends State<NumberMemoryGame>
   }
 
   Future<bool> _ensureFaceMonitoring() async {
-    // A teacher can switch lesson proctoring off for the whole class; when
-    // they have, the camera is never opened and the run is not marked
-    // unwatched - nobody expected it to be watched.
-    if (!ProctoringSettings.instance.enabledFor(isExam: false)) return true;
+    // Either the teacher switched lesson proctoring off for the whole class,
+    // or this player turned the camera off in their own settings. Nothing is
+    // opened, and `_runProctored` stays false, so the score records that the
+    // camera was not watching.
+    if (!faceProctorEnabledFor(isExam: false)) return true;
 
     // Claimed before the await, as in _startFaceProctor: this takes hundreds
     // of milliseconds, and a dispose inside that window used to leave the
@@ -250,6 +256,7 @@ class _NumberMemoryGameState extends State<NumberMemoryGame>
 
     switch (status) {
       case FaceProctorStartStatus.started:
+        _runProctored = true;
         return true;
       case FaceProctorStartStatus.unsupportedPlatform:
         if (!_faceSupportNoticeShown) {

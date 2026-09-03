@@ -5,6 +5,7 @@ import '../../app_gate.dart';
 import '../../models/app_user_record.dart';
 import '../../models/quiz_question_record.dart';
 import '../../services/custom_question_sync.dart';
+import '../../services/player_proctoring_preference.dart';
 import '../../services/proctoring_settings.dart';
 import '../../services/question_repository.dart';
 import '../../services/leaderboard_service.dart';
@@ -68,6 +69,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
     resetPlayerNameCache();
     await CustomQuestionSync.instance.stop();
     await ProctoringSettings.instance.stop();
+    PlayerProctoringPreference.instance.reset();
     await FirebaseAuth.instance.signOut();
     if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(

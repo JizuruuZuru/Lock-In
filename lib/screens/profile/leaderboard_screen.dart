@@ -16,6 +16,12 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
   static const Color _bgBottomColor = Color(0xFFD4EDD1);
   static const Color _panelColor = Color(0xFFFAFFF9);
 
+  /// "Camera off" is deliberately a neutral grey rather than a red or an
+  /// amber. Playing without the camera is a choice the app offers, not a
+  /// warning - it just has to be visible next to the scores set with it on.
+  static const Color _cameraOnColor = Color(0xFF2E7D32);
+  static const Color _cameraOffColor = Color(0xFF6B6B6B);
+
   String? _selectedGame; // null = all games
 
   /// Held in state so selecting a game from the dropdown does not tear down
@@ -120,7 +126,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                     children: [
                       // Dropdown filter – styled to match system design
                       Container(
-                        margin: const EdgeInsets.only(bottom: 16),
+                        margin: const EdgeInsets.only(bottom: 10),
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                         decoration: BoxDecoration(
                           color: _panelColor,
@@ -185,6 +191,29 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                           ),
                         ),
                       ),
+                      // Says what the badges on the rows mean. A new badge on
+                      // a children's leaderboard needs explaining once, in the
+                      // same words the badge itself uses.
+                      const Padding(
+                        padding: EdgeInsets.only(bottom: 12),
+                        child: Row(
+                          children: [
+                            Icon(Icons.videocam_rounded,
+                                size: 15, color: _cameraOnColor),
+                            SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                'Camera on means the front camera was watching '
+                                'that round.',
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                       // Leaderboard list
                       Expanded(
                         // The dropdown filters client-side out of the global
@@ -212,6 +241,14 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                             final game = data['game'] ?? 'Unknown';
                             final difficulty = data['difficulty'] as String?;
                             final score = data['score'] ?? 0;
+                            // Read defensively rather than cast: every row
+                            // saved before the camera badge existed has no
+                            // such field, and those must show no badge at all
+                            // rather than being labelled "Camera off" for a
+                            // round nobody recorded either way.
+                            final proctoredValue = data['proctored'];
+                            final bool? proctored =
+                                proctoredValue is bool ? proctoredValue : null;
                             final timestamp = data['timestamp'] as Timestamp?;
                             final timeStr = timestamp != null
                                 ? _formatTimestamp(timestamp.toDate())
@@ -260,9 +297,25 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                                       ),
                                     ),
                                   ),
-                                  title: Text(
-                                    username,
-                                    style: const TextStyle(fontWeight: FontWeight.w800),
+                                  title: Row(
+                                    children: [
+                                      // Flexible, so a long name ellipsises
+                                      // instead of squeezing the badge off the
+                                      // row on a narrow phone.
+                                      Flexible(
+                                        child: Text(
+                                          username,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w800,
+                                          ),
+                                        ),
+                                      ),
+                                      if (proctored != null) ...[
+                                        const SizedBox(width: 8),
+                                        _CameraChip(watching: proctored),
+                                      ],
+                                    ],
                                   ),
                                   subtitle: Text(
                                     subtitleText,
@@ -380,6 +433,52 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
         ],
       ),
       child: child,
+    );
+  }
+}
+
+/// The "was the camera watching?" badge on a leaderboard row.
+///
+/// Shaped like `AdminChip`, which marks the same thing on the teacher's Exam
+/// Security page, but painted in this screen's green palette rather than the
+/// admin purple, and using the same videocam icons so the two read as one idea.
+class _CameraChip extends StatelessWidget {
+  final bool watching;
+
+  const _CameraChip({required this.watching});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = watching
+        ? _LeaderboardScreenState._cameraOnColor
+        : _LeaderboardScreenState._cameraOffColor;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.13),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color, width: 1.4),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            watching ? Icons.videocam_rounded : Icons.videocam_off_rounded,
+            size: 13,
+            color: color,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            watching ? 'Camera on' : 'Camera off',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+              color: color,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

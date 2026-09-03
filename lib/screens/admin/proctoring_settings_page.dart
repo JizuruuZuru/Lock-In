@@ -8,10 +8,12 @@ import '../../widgets/offline_banner.dart';
 
 /// Turns the front-camera proctor on and off for the whole class.
 ///
-/// This is deliberately a teacher-only control rather than a switch in the
-/// player's own settings sheet: proctoring is anti-cheat, so a student who
-/// could reach it would simply turn it off. The setting lives in Firestore and
-/// reaches every device (see [ProctoringSettings]).
+/// The setting lives in Firestore and reaches every device (see
+/// [ProctoringSettings]). It is the outer gate: a student has their own camera
+/// switch in their profile settings and can decline within what is allowed
+/// here, but nothing they do can switch the camera back on where a teacher has
+/// turned it off. A student who declines is not hidden - their scores carry a
+/// "Camera off" badge on the leaderboard.
 class ProctoringSettingsPage extends StatefulWidget {
   const ProctoringSettingsPage({super.key});
 
@@ -156,11 +158,16 @@ class _ProctoringSettingsPageState extends State<ProctoringSettingsPage> {
           SizedBox(width: 10),
           Expanded(
             child: Text(
-              'These apply to every student on every device. A student cannot '
-              'change them.\n\n'
-              'If a device has no front camera, or a child declines the camera '
-              'prompt, the game still runs — it is simply recorded as not '
-              'proctored, so you can tell those attempts apart.',
+              'These apply to every student on every device. Switching one off '
+              'here stops the camera everywhere, and no student can switch it '
+              'back on.\n\n'
+              'Where you leave it on, a student may still turn the camera off '
+              'for themselves in their profile settings — and so may a device '
+              'with no front camera, or a child who declines the camera '
+              'prompt. The game always runs either way. Every one of those '
+              'attempts is recorded as not proctored and shows a "Camera off" '
+              'badge on the leaderboard, so you can tell them apart at a '
+              'glance.',
               style: TextStyle(
                 fontSize: 13,
                 height: 1.4,
