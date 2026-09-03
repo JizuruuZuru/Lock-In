@@ -17,8 +17,21 @@ class _MobileFaceProctorService implements FaceProctorService {
   // -------------------------------------------------------------------------
   static const Duration _frameThrottle = Duration(milliseconds: 250);
   
-  // 🔧 TEMPORARILY set to 90° for testing – faces in any orientation will be considered valid.
-  //    Once detection works, tighten these to 18° or your desired limit.
+  // Orientation checking is OFF, deliberately.
+  //
+  // A head can only yaw or pitch +/-90 degrees before the face stops being
+  // detectable at all, so a 90-degree limit accepts every face ML Kit can
+  // find. That makes `FaceViolationReason.notFacingDevice` unreachable: the
+  // only violation this service can raise is `noFaceDetected`, i.e. the player
+  // left the camera's view entirely.
+  //
+  // This started as a "temporary, for testing" value and shipped that way. It
+  // is now a deliberate setting rather than an oversight - looking away from
+  // the screen is not treated as cheating - but it is a product decision, not
+  // a technical one. Tightening these (roughly 35-45 degrees is usable; 18 is
+  // strict enough to fire on normal reading movement) re-enables it, and would
+  // want testing against real classroom footage first: a child glancing at
+  // their paper must not be flagged.
   static const double _maxYawDegrees = 90;
   static const double _maxPitchDegrees = 90;
 

@@ -5170,4 +5170,35 @@ const List<_LeveledQuestion> _scienceHumansAndAnimalsQuestions = [
       choices: ['Get sicker', 'Grow taller', 'Stay hungry'],
     ),
   ),
+  // --- Added so each topic reaches 60 *distinct* questions. The pool
+  // de-duplicates by topic::prompt, and these topics each had one or two
+  // questions written twice, so their servable count was 58-59.
+  _LeveledQuestion(
+    minLevel: 2,
+    question: SubjectQuizQuestion(
+      topic: 'Adaptations',
+      instruction: 'Pick the best answer.',
+      prompt: 'Why do desert plants like cactuses have very thick stems?',
+      correctAnswer: 'To store water',
+      choices: [
+        'To stay cold',
+        'To float on water',
+        'To hide from the Sun',
+      ],
+    ),
+  ),
+  _LeveledQuestion(
+    minLevel: 2,
+    question: SubjectQuizQuestion(
+      topic: 'Skeletal System',
+      instruction: 'Pick the best answer.',
+      prompt: 'What do we call the places where two bones meet?',
+      correctAnswer: 'joints',
+      choices: [
+        'muscles',
+        'nerves',
+        'lungs',
+      ],
+    ),
+  ),
 ];

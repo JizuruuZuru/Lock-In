@@ -20,6 +20,7 @@ class ExamFirestoreService {
     required bool isCorrect,
     required int score,
     required int level,
+    bool? proctored,
   }) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
@@ -38,6 +39,7 @@ class ExamFirestoreService {
         'isCorrect': isCorrect,
         'score': score,
         'level': level,
+        if (proctored != null) 'proctored': proctored,
         'timestamp': FieldValue.serverTimestamp(),
       });
     } catch (error) {
@@ -53,6 +55,7 @@ class ExamFirestoreService {
     required int level,
     required int hearts,
     required int attempts,
+    bool? proctored,
   }) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
@@ -67,6 +70,7 @@ class ExamFirestoreService {
         'level': level,
         'hearts': hearts,
         'attempts': attempts,
+        if (proctored != null) 'proctored': proctored,
         'timestamp': FieldValue.serverTimestamp(),
       });
     } catch (error) {

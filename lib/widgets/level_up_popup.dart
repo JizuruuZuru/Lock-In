@@ -60,7 +60,13 @@ class _LevelUpPopupState extends State<LevelUpPopup>
 
   @override
   Widget build(BuildContext context) {
-    return ScaleTransition(
+    // `showDialog(barrierDismissible: false)` stops a tap outside, but not the
+    // Android system back button. Backing out of this popup left the game
+    // frozen behind it - `isGameOver` still true, the timer paused, every
+    // answer button disabled - with no way to recover but the app-bar arrow.
+    return PopScope(
+      canPop: false,
+      child: ScaleTransition(
       scale: _scaleAnimation,
       child: FadeTransition(
         opacity: _fadeAnimation,
@@ -84,9 +90,21 @@ class _LevelUpPopupState extends State<LevelUpPopup>
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Level Up Icon with animation
-                Transform.translate(
-                  offset: Offset(0, _bounceAnimation.value),
+                // Level Up Icon with animation.
+                //
+                // The AnimatedBuilder is what makes this move. `Transform`
+                // read `_bounceAnimation.value` directly in build(), but the
+                // only animated wrappers here are ScaleTransition and
+                // FadeTransition - and those rebuild themselves, not their
+                // child subtree. Nothing ever listened for this one, so the
+                // star was painted once at `begin: -30` and sat permanently
+                // 30px too high instead of bouncing into place.
+                AnimatedBuilder(
+                  animation: _bounceAnimation,
+                  builder: (context, child) => Transform.translate(
+                    offset: Offset(0, _bounceAnimation.value),
+                    child: child,
+                  ),
                   child: Container(
                     width: 100,
                     height: 100,
@@ -194,6 +212,7 @@ class _LevelUpPopupState extends State<LevelUpPopup>
             ),
           ),
         ),
+      ),
       ),
     );
   }

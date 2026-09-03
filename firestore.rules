@@ -91,6 +91,16 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin();
     }
 
+    // Teacher-owned app settings, currently just the proctoring switches.
+    // Every signed-in device reads these at launch; only an admin may change
+    // them. If a student could write here they could turn off the anti-cheat
+    // that is watching them, which is the whole reason this is not a
+    // per-device preference.
+    match /app_config/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
     match /leaderboard_entries/{entryId} {
       allow read: if isSignedIn();
       allow write: if isSignedIn()

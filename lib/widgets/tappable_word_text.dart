@@ -40,6 +40,23 @@ class TappableWordText extends StatefulWidget {
 class _TappableWordTextState extends State<TappableWordText> {
   final List<TapGestureRecognizer> _recognizers = [];
 
+  /// The spans currently on screen, and the inputs they were built from.
+  ///
+  /// Recognizers used to be torn down and rebuilt at the top of every
+  /// `build()`. The quiz screens rebuild this widget on every `setState` - a
+  /// score change, a heart, a splash toggle, each choice tap - so N
+  /// recognizers were allocated and destroyed per rebuild for every prompt on
+  /// screen. Worse, a rebuild while a finger was still down disposed the
+  /// recognizer holding the live gesture arena entry, which throws
+  /// "A TapGestureRecognizer was used after being disposed".
+  ///
+  /// The spans only depend on these four inputs, so they are rebuilt only when
+  /// one of them actually changes.
+  List<InlineSpan>? _spans;
+  String? _builtText;
+  Color? _builtHighlight;
+  int? _builtMinWordLength;
+
   @override
   void dispose() {
     _disposeRecognizers();
@@ -82,6 +99,23 @@ class _TappableWordTextState extends State<TappableWordText> {
 
   @override
   Widget build(BuildContext context) {
+    if (_spans == null ||
+        _builtText != widget.text ||
+        _builtHighlight != widget.highlightColor ||
+        _builtMinWordLength != widget.minWordLength) {
+      _spans = _buildSpans();
+      _builtText = widget.text;
+      _builtHighlight = widget.highlightColor;
+      _builtMinWordLength = widget.minWordLength;
+    }
+
+    return Text.rich(
+      TextSpan(style: widget.style, children: _spans),
+      textAlign: widget.textAlign,
+    );
+  }
+
+  List<InlineSpan> _buildSpans() {
     _disposeRecognizers();
 
     // Split on whitespace but keep the separators so spacing is preserved.
@@ -116,9 +150,6 @@ class _TappableWordTextState extends State<TappableWordText> {
       if (i < tokens.length - 1) spans.add(const TextSpan(text: ' '));
     }
 
-    return Text.rich(
-      TextSpan(style: widget.style, children: spans),
-      textAlign: widget.textAlign,
-    );
+    return spans;
   }
 }

@@ -2053,4 +2053,91 @@ const List<_LeveledQuestion> _scienceMaterialsAndChemistryQuestions = [
       ],
     ),
   ),
+  // --- Added so each topic reaches 60 *distinct* questions. The pool
+  // de-duplicates by topic::prompt, and these topics each had one or two
+  // questions written twice, so their servable count was 58-59.
+  _LeveledQuestion(
+    minLevel: 2,
+    question: SubjectQuizQuestion(
+      topic: 'States of Matter',
+      instruction: 'Choose the state of matter.',
+      prompt: 'Which state of matter spreads out to fill its whole container?',
+      correctAnswer: 'gas',
+      choices: [
+        'solid',
+        'liquid',
+        'ice',
+      ],
+    ),
+  ),
+  _LeveledQuestion(
+    minLevel: 3,
+    question: SubjectQuizQuestion(
+      topic: 'States of Matter',
+      instruction: 'Pick the best answer.',
+      prompt: 'What happens to most liquids when they get cold enough?',
+      correctAnswer: 'They freeze into a solid',
+      choices: [
+        'They boil into a gas',
+        'They disappear completely',
+        'They turn into light',
+      ],
+    ),
+  ),
+  _LeveledQuestion(
+    minLevel: 2,
+    question: SubjectQuizQuestion(
+      topic: 'Material Properties',
+      instruction: 'Pick the best material.',
+      prompt: 'Which material would be best for making a raincoat?',
+      correctAnswer: 'plastic',
+      choices: [
+        'paper',
+        'cotton wool',
+        'cardboard',
+      ],
+    ),
+  ),
+  _LeveledQuestion(
+    minLevel: 3,
+    question: SubjectQuizQuestion(
+      topic: 'Material Properties',
+      instruction: 'Pick the best answer.',
+      prompt: 'Which of these materials lets heat pass through it most easily?',
+      correctAnswer: 'metal',
+      choices: [
+        'wood',
+        'plastic',
+        'wool',
+      ],
+    ),
+  ),
+  _LeveledQuestion(
+    minLevel: 2,
+    question: SubjectQuizQuestion(
+      topic: 'Mixtures',
+      instruction: 'Pick the best answer.',
+      prompt: 'What is made when you stir sugar into warm water until it disappears?',
+      correctAnswer: 'a solution',
+      choices: [
+        'a new solid',
+        'a gas',
+        'a magnet',
+      ],
+    ),
+  ),
+  _LeveledQuestion(
+    minLevel: 3,
+    question: SubjectQuizQuestion(
+      topic: 'Mixtures',
+      instruction: 'Pick the best answer.',
+      prompt: 'Which tool would help you separate sand from a mixture of sand and water?',
+      correctAnswer: 'a filter',
+      choices: [
+        'a magnet',
+        'a thermometer',
+        'a ruler',
+      ],
+    ),
+  ),
 ];

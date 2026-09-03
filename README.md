@@ -5,9 +5,9 @@ Flutter on Firebase.
 
 Students get 28 short, timed lesson games across English, Math, and Science,
 plus a mixed-subject Exam mode that can watch for a face and detect leaving the
-app. Teachers get an admin panel that owns the question bank and the accounts —
-write, edit, publish, hide, and delete questions, and see them reach students
-without an app restart.
+app. Teachers get an admin panel that owns the question bank, the accounts, and
+whether the camera watches at all — write, edit, publish, hide, and delete
+questions, and see them reach students without an app restart.
 
 | | |
 |---|---|
@@ -25,7 +25,7 @@ flutter pub get
 flutter run                 # or: flutter run -d chrome / -d windows
 ```
 
-The app is playable straight away — 5,793 questions are bundled into the binary,
+The app is playable straight away — 5,809 questions are bundled into the binary,
 so a student can practise with no account and no connection.
 
 ### Deploy the security rules
@@ -131,7 +131,7 @@ writes a transcript to `docs/evidence/api-test-log.txt`.
 lib/
 ├── main.dart                   entry point, Firebase init, offline persistence
 ├── app_gate.dart               the single routing decision point
-├── data/                       5,793 bundled questions + the question bank
+├── data/                       5,809 bundled questions + the question bank
 ├── models/                     the two entities, with validation on the model
 ├── screens/                    45 screens — admin, auth, games, exam, home
 ├── services/                   23 services
@@ -202,6 +202,20 @@ The app is built for a school connection that comes and goes:
 
 - **Face proctoring is mobile-only** — it needs a front camera and ML Kit. On
   desktop and web the exam runs unproctored; the app-leave detector still works.
+- **Face proctoring is optional, and a teacher owns the switch.** Admin Panel →
+  **Exam Security** turns it on or off separately for exams and for lessons. It
+  is stored in Firestore so one decision reaches every device, and cached on
+  each device so it is still right on a cold offline launch. It is deliberately
+  not in the player's own settings — a student who could reach it would simply
+  turn it off.
+- **A missing camera never blocks a child.** If the device has no front camera,
+  or the camera prompt is declined, the game still runs; the attempt is recorded
+  with `proctored: false` so a teacher can tell watched runs from unwatched
+  ones.
+- **Only face *presence* is checked, not orientation.** The yaw/pitch limits are
+  set wide enough to accept any detectable face, so looking away from the screen
+  is not treated as cheating — only leaving the camera's view is. See the note
+  in `lib/services/face_proctor_service_mobile.dart`.
 - **Account deletion is a soft delete** — a client SDK cannot remove another
   person's auth credential. `disabled: true` blocks sign-in and is reversible.
 - **The first admin is promoted by hand**, by design (see above).

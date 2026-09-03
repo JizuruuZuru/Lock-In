@@ -3,6 +3,7 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 
+import '../../services/proctoring_settings.dart';
 import '../../services/game_result_recorder.dart';
 import '../../services/game_logger.dart';
 import '../../services/face_proctor_contract.dart';
@@ -59,6 +60,11 @@ class _RomanNumeralsGameState extends State<RomanNumeralsGame> {
   bool showCorrectSplash = false;
   bool showIncorrectSplash = false;
   final GameSaveGate _saveGate = GameSaveGate();
+
+  /// Whether this run is actually being watched. Set false when proctoring was
+  /// wanted but the camera could not be used, so the saved score records that a
+  /// teacher was not watching this attempt.
+  bool _runProctored = true;
 
   static const String _gameName = 'Roman Numerals';
   bool _showExitConfirmation = false;
@@ -361,6 +367,7 @@ class _RomanNumeralsGameState extends State<RomanNumeralsGame> {
         score: score,
         level: level,
         difficulty: gameDifficultyModeLabel(_selectedMode),
+        proctored: _runProctored,
         storageKey: 'roman_numerals',
       );
     });
@@ -423,6 +430,9 @@ class _RomanNumeralsGameState extends State<RomanNumeralsGame> {
                 ),
               ),
               GameSecurityOverlay(
+                      enableFaceProctor:
+                          ProctoringSettings.instance.enabledFor(isExam: false),
+                      onProctoringUnavailable: () => _runProctored = false,
                       faceProctor: _faceProctor,
                       gameName: _gameName,
                       isActive: hasStarted && !isGameOver && !showCorrectSplash && !showIncorrectSplash && !_showExitConfirmation,

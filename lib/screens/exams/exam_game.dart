@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../services/proctoring_settings.dart';
 import '../../services/game_result_recorder.dart';
 import '../../data/subject_question_bank.dart';
 import '../../services/connectivity_service.dart';
@@ -151,6 +152,21 @@ class _ExamGameState extends State<ExamGame> {
   bool showIncorrectSplash = false;
   bool _showExitConfirmation = false;
   final GameSaveGate _saveGate = GameSaveGate();
+
+  /// Whether this run is actually being watched. Set false when proctoring was
+  /// wanted but the camera could not be used, so the saved score records that a
+  /// teacher was not watching this attempt.
+  bool _runProctored = true;
+
+  /// The pause between answering and the next question.
+  ///
+  /// Was an un-cancellable `Future.delayed`. Its callback calls
+  /// `generateQuestion()`, which sets `isGameOver = false` and mints a fresh
+  /// `timerKey` - so a face violation or an app-background landing inside that
+  /// window put the "Leave / Stay" overlay on screen with a live timer
+  /// counting down underneath it, and the player lost a heart to a question
+  /// they could not see. Cancelled when the overlay locks, and on dispose.
+  Timer? _feedbackTimer;
   bool _isOffline = false;
 
   int score = 0;
@@ -187,6 +203,7 @@ class _ExamGameState extends State<ExamGame> {
 
   @override
   void dispose() {
+    _feedbackTimer?.cancel();
     GameLogger.endSession(_gameName);
     SoundService().playPageBgm(BgmPage.home);
     super.dispose();
@@ -786,6 +803,7 @@ class _ExamGameState extends State<ExamGame> {
       isCorrect: isCorrect,
       score: score,
       level: level,
+      proctored: _runProctored,
     ));
 
     if (isCorrect) {
@@ -802,7 +820,7 @@ class _ExamGameState extends State<ExamGame> {
         isGameOver = true;
       });
 
-      Future.delayed(_correctFeedbackDuration, () {
+      _feedbackTimer = Timer(_correctFeedbackDuration, () {
         if (!mounted) return;
         setState(() => showCorrectSplash = false);
 
@@ -849,7 +867,7 @@ class _ExamGameState extends State<ExamGame> {
       debugPrint('Error saving Exam score: $error');
     }));
 
-    Future.delayed(_incorrectFeedbackDuration, () {
+    _feedbackTimer = Timer(_incorrectFeedbackDuration, () {
       if (!mounted) return;
       setState(() => showIncorrectSplash = false);
       showGameOverScreen(incorrectAnswer);
@@ -865,6 +883,7 @@ class _ExamGameState extends State<ExamGame> {
       level: level,
       hearts: hearts,
       attempts: _attemptsLogged,
+      proctored: _runProctored,
     );
   }
 
@@ -974,6 +993,7 @@ class _ExamGameState extends State<ExamGame> {
         score: score,
         level: level,
         difficulty: gameDifficultyModeLabel(_selectedMode),
+        proctored: _runProctored,
         storageKey: '${_difficultyName.toLowerCase()}_exam',
       );
       await _saveSessionSnapshot();
@@ -1037,6 +1057,9 @@ class _ExamGameState extends State<ExamGame> {
                 ),
               ),
               GameSecurityOverlay(
+                      enableFaceProctor:
+                          ProctoringSettings.instance.enabledFor(isExam: true),
+                      onProctoringUnavailable: () => _runProctored = false,
                       faceProctor: _faceProctor,
                       gameName: _gameName,
                       isActive: hasStarted && !isGameOver && !showCorrectSplash && !showIncorrectSplash && !_showExitConfirmation,
@@ -1045,6 +1068,9 @@ class _ExamGameState extends State<ExamGame> {
                         setState(() {
                           isGameOver = locked;
                           if (locked) {
+                            // Drop any pending "next question" callback, or it
+                            // will restart the round behind this overlay.
+                            _feedbackTimer?.cancel();
                             showCorrectSplash = false;
                             showIncorrectSplash = false;
                             _showExitConfirmation = false;

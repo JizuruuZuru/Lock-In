@@ -7373,4 +7373,35 @@ const List<_LeveledQuestion> _scienceEarthAndSpaceQuestions = [
       ],
     ),
   ),
+  // --- Added so each topic reaches 60 *distinct* questions. The pool
+  // de-duplicates by topic::prompt, and these topics each had one or two
+  // questions written twice, so their servable count was 58-59.
+  _LeveledQuestion(
+    minLevel: 2,
+    question: SubjectQuizQuestion(
+      topic: 'Sun',
+      instruction: 'Pick the best answer.',
+      prompt: 'About how long does Earth take to travel once around the Sun?',
+      correctAnswer: 'one year',
+      choices: [
+        'one day',
+        'one week',
+        'one hour',
+      ],
+    ),
+  ),
+  _LeveledQuestion(
+    minLevel: 3,
+    question: SubjectQuizQuestion(
+      topic: 'Moon',
+      instruction: 'Pick the best answer.',
+      prompt: 'Why does the Moon seem to change shape during the month?',
+      correctAnswer: 'We see different amounts of its lit side',
+      choices: [
+        'The Moon really breaks apart',
+        'Clouds cover half of it',
+        'The Sun switches off',
+      ],
+    ),
+  ),
 ];

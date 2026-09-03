@@ -5,6 +5,7 @@ import '../../app_gate.dart';
 import '../../models/app_user_record.dart';
 import '../../models/quiz_question_record.dart';
 import '../../services/custom_question_sync.dart';
+import '../../services/proctoring_settings.dart';
 import '../../services/question_repository.dart';
 import '../../services/leaderboard_service.dart';
 import '../../services/sound_service.dart';
@@ -15,6 +16,7 @@ import '../../widgets/offline_banner.dart';
 import 'account_list_page.dart';
 import 'question_list_page.dart';
 import 'api_console_page.dart';
+import 'proctoring_settings_page.dart';
 import 'trivia_import_page.dart';
 
 /// Landing screen of the admin area.
@@ -65,6 +67,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
 
     resetPlayerNameCache();
     await CustomQuestionSync.instance.stop();
+    await ProctoringSettings.instance.stop();
     await FirebaseAuth.instance.signOut();
     if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
@@ -360,6 +363,15 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
         color: AdminPalette.info,
         onTap: () => _open(const ApiConsolePage()),
       ),
+      _ActionTile(
+        icon: Icons.videocam_rounded,
+        title: 'Exam Security',
+        description:
+            'Choose whether the front camera watches during exams and during '
+            'lessons. Applies to every student on every device.',
+        color: AdminPalette.secondary,
+        onTap: () => _open(const ProctoringSettingsPage()),
+      ),
     ];
 
     if (!isWide) {
@@ -373,12 +385,40 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
       );
     }
 
-    return Row(
+    // Two rows rather than one.
+    //
+    // A single Row was already tight with four tiles - about 215px each at the
+    // 900px breakpoint, holding a 44px icon, a title, and a three-line
+    // description. With a fifth it would be unreadable. Splitting keeps each
+    // tile roughly the width it had before.
+    final perRow = (tiles.length / 2).ceil();
+    final rows = <List<Widget>>[
+      tiles.sublist(0, perRow),
+      tiles.sublist(perRow),
+    ];
+
+    return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        for (var i = 0; i < tiles.length; i++) ...[
-          if (i > 0) const SizedBox(width: 12),
-          Expanded(child: tiles[i]),
+        for (var r = 0; r < rows.length; r++) ...[
+          if (r > 0) const SizedBox(height: 12),
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (var i = 0; i < rows[r].length; i++) ...[
+                  if (i > 0) const SizedBox(width: 12),
+                  Expanded(child: rows[r][i]),
+                ],
+                // Keeps the last row's tiles the same width as the first
+                // row's when the count is odd, instead of stretching them.
+                for (var i = rows[r].length; i < perRow; i++) ...[
+                  const SizedBox(width: 12),
+                  const Expanded(child: SizedBox.shrink()),
+                ],
+              ],
+            ),
+          ),
         ],
       ],
     );

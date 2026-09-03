@@ -7372,4 +7372,35 @@ const List<_LeveledQuestion> _sciencePhysicsAndForcesQuestions = [
       ],
     ),
   ),
+  // --- Added so each topic reaches 60 *distinct* questions. The pool
+  // de-duplicates by topic::prompt, and these topics each had one or two
+  // questions written twice, so their servable count was 58-59.
+  _LeveledQuestion(
+    minLevel: 2,
+    question: SubjectQuizQuestion(
+      topic: 'Sound',
+      instruction: 'Pick the best answer.',
+      prompt: 'What do we call how high or how low a sound is?',
+      correctAnswer: 'pitch',
+      choices: [
+        'weight',
+        'colour',
+        'length',
+      ],
+    ),
+  ),
+  _LeveledQuestion(
+    minLevel: 3,
+    question: SubjectQuizQuestion(
+      topic: 'Circuits',
+      instruction: 'Pick the best answer.',
+      prompt: 'What happens to a bulb if there is a gap in the circuit?',
+      correctAnswer: 'It stays off',
+      choices: [
+        'It gets brighter',
+        'It changes colour',
+        'It melts',
+      ],
+    ),
+  ),
 ];

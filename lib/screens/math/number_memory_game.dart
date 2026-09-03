@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
+import '../../services/proctoring_settings.dart';
 import '../../services/game_result_recorder.dart';
 import '../../services/game_logger.dart';
 import '../../services/face_proctor_contract.dart';
@@ -64,6 +65,10 @@ class _NumberMemoryGameState extends State<NumberMemoryGame>
   final FaceProctorService _faceProctor = createFaceProctorService();
   bool _isProctorActive = false;
 
+  /// Whether this run is actually being watched. False when proctoring was
+  /// wanted but the camera could not be used.
+  bool _runProctored = true;
+
   // 🔥 duplicate prevention
   final GameSaveGate _saveGate = GameSaveGate();
 
@@ -98,6 +103,7 @@ class _NumberMemoryGameState extends State<NumberMemoryGame>
   }
 
   Future<bool> _startFaceProctor() async {
+    if (!ProctoringSettings.instance.enabledFor(isExam: false)) return false;
     if (_isProctorActive) return true;
 
     // Claimed before the await. `start()` takes hundreds of milliseconds on
@@ -177,6 +183,10 @@ class _NumberMemoryGameState extends State<NumberMemoryGame>
   Future<void> startGame() async {
     await _stopFaceProctor();
 
+    // Reset before the check below: the check is what discovers the camera is
+    // unusable, so clearing the flag after it would throw that answer away.
+    _runProctored = true;
+
     final monitoringReady = await _ensureFaceMonitoring();
     if (!monitoringReady || !mounted) return;
 
@@ -195,25 +205,51 @@ class _NumberMemoryGameState extends State<NumberMemoryGame>
       _leaveAttemptsThisRun = 0;
     });
     startLevel();
-    _isProctorActive = true;
+    // Deliberately not set here. `_ensureFaceMonitoring` already reports the
+    // truth: it returns true for `unsupportedPlatform` so web and desktop can
+    // still play, but nothing was started there. Re-asserting the flag made it
+    // claim proctoring was running on every platform.
   }
 
   Future<bool> _ensureFaceMonitoring() async {
-    final status = await _faceProctor.start(
-      absenceThreshold: const Duration(seconds: 3),
-      onViolation: (event) {
-        _handleFaceViolation(
-          gameName: _gameName,
-          event: event,
-        );
-      },
-    );
+    // A teacher can switch lesson proctoring off for the whole class; when
+    // they have, the camera is never opened and the run is not marked
+    // unwatched - nobody expected it to be watched.
+    if (!ProctoringSettings.instance.enabledFor(isExam: false)) return true;
 
-    if (!mounted) return false;
+    // Claimed before the await, as in _startFaceProctor: this takes hundreds
+    // of milliseconds, and a dispose inside that window used to leave the
+    // camera running with nothing left to stop it.
+    _isProctorActive = true;
+
+    final FaceProctorStartStatus status;
+    try {
+      status = await _faceProctor.start(
+        absenceThreshold: const Duration(seconds: 3),
+        onViolation: (event) {
+          _handleFaceViolation(
+            gameName: _gameName,
+            event: event,
+          );
+        },
+      );
+    } catch (_) {
+      _isProctorActive = false;
+      rethrow;
+    }
+
+    if (!mounted) {
+      await _faceProctor.stop();
+      _isProctorActive = false;
+      return false;
+    }
+
+    if (status != FaceProctorStartStatus.started) {
+      _isProctorActive = false;
+    }
 
     switch (status) {
       case FaceProctorStartStatus.started:
-        _isProctorActive = true;
         return true;
       case FaceProctorStartStatus.unsupportedPlatform:
         if (!_faceSupportNoticeShown) {
@@ -227,30 +263,37 @@ class _NumberMemoryGameState extends State<NumberMemoryGame>
           );
         }
         return true;
+      // These used to return false, aborting startGame - so declining the
+      // camera prompt once left the player unable to start at all. The round
+      // runs and is recorded as unwatched instead.
       case FaceProctorStartStatus.permissionDenied:
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Camera permission is required to start the game.'),
-          ),
+        _reportProctoringUnavailable(
+          'Camera permission was declined, so this round is not being watched.',
         );
-        return false;
+        return true;
       case FaceProctorStartStatus.noFrontCamera:
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('No front camera found on this device.'),
-          ),
+        _reportProctoringUnavailable(
+          'No front camera on this device, so this round is not being watched.',
         );
-        return false;
+        return true;
       case FaceProctorStartStatus.initializationFailed:
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Unable to initialize face detection. Please try again.',
-            ),
-          ),
+        _reportProctoringUnavailable(
+          'Face detection could not start, so this round is not being watched.',
         );
-        return false;
+        return true;
     }
+  }
+
+  /// Tells the player once and flags the run, without stopping it.
+  void _reportProctoringUnavailable(String message) {
+    if (!mounted) return;
+    // Do not retry for the rest of this screen's life, or a declined
+    // permission would re-prompt on every pause/resume cycle.
+    _faceSupportNoticeShown = true;
+    _runProctored = false;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   bool _isRoundActive() {
@@ -585,6 +628,7 @@ class _NumberMemoryGameState extends State<NumberMemoryGame>
         score: level,
         level: level,
         difficulty: gameDifficultyModeLabel(_selectedMode),
+        proctored: _runProctored,
         storageKey: 'number_memory',
       );
     });

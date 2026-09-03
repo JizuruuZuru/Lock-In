@@ -330,7 +330,28 @@ class SubjectQuestionBank {
           .toList(growable: false);
     }
 
-    final sorted = List<LeveledQuizQuestion>.of(questions)
+    // De-duplicate by the same key the game uses to remember what it has
+    // already asked.
+    //
+    // 24 bundled questions are written twice (one of them three times), so the
+    // pool held 5,793 entries for 5,768 distinct keys. Because a run records
+    // every served question in `_askedQuestionKeys` and excludes it from the
+    // next draw, the second copy of a duplicate could never be served - it
+    // just sat in the pool skewing the odds and inflating the "N questions
+    // rotate with level difficulty" count shown on the start panel.
+    //
+    // Done here rather than by hand-editing the question files: it is one
+    // change instead of 25 across fourteen files, and it also protects the
+    // pool when an admin writes a question that collides with a bundled one.
+    // The first copy wins, so the lowest `minLevel` a duplicate was filed
+    // under is the one kept once sorted.
+    final seenKeys = <String>{};
+    final deduped = <LeveledQuizQuestion>[];
+    for (final item in questions) {
+      if (seenKeys.add(questionKey(item.question))) deduped.add(item);
+    }
+
+    final sorted = List<LeveledQuizQuestion>.of(deduped)
       ..sort((a, b) => a.minLevel.compareTo(b.minLevel));
     final resolved = _ResolvedPool(
       questions: List<LeveledQuizQuestion>.unmodifiable(sorted),

@@ -14,10 +14,14 @@ class EnglishSentenceStructureGame extends StatelessWidget {
       lessonDescription:
           'Sentence-level grammar: spot complete sentences, subjects, and compound sentences.',
       lessonTopicsSummary:
-          'Sentence structure and compound sentences.',
+          'Sentence structure, sentence types, and compound sentences.',
       allowedTopics: {
         'Sentence Structure',
         'Compound Sentences',
+        // 'Sentence Types' was in the bank but allowed by no lesson, so its
+        // two questions (commands and exclamations) were unreachable from the
+        // menu. They belong here.
+        'Sentence Types',
       },
     );
   }

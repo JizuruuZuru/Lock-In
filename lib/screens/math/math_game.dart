@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import '../../services/proctoring_settings.dart';
 import '../../services/leaderboard_service.dart';
 import '../../services/game_logger.dart';
 
@@ -73,6 +74,10 @@ class _MathGameState extends State<MathGame> with WidgetsBindingObserver {
   final FaceProctorService _faceProctor = createFaceProctorService();
   bool _isProctorActive = false;
 
+  /// Whether this run is actually being watched. False when proctoring was
+  /// wanted but the camera could not be used, so the saved score can say so.
+  bool _runProctored = true;
+
   // 🔥 duplicate prevention
   bool _isSavingScore = false;
 
@@ -107,6 +112,7 @@ class _MathGameState extends State<MathGame> with WidgetsBindingObserver {
 
   Future<bool> _startFaceProctor() async {
     if (selectedMode == null) return false;
+    if (!ProctoringSettings.instance.enabledFor(isExam: false)) return false;
     if (_isProctorActive) return true;
 
     // Claimed before the await. `start()` takes hundreds of milliseconds on
@@ -149,6 +155,11 @@ class _MathGameState extends State<MathGame> with WidgetsBindingObserver {
   Future<void> startGame(MathMode mode) async {
     await _stopFaceProctor();
 
+    // Reset before the check below, not in the setState after it: the check is
+    // what discovers the camera is unusable, and clearing the flag afterwards
+    // would throw that answer away.
+    _runProctored = true;
+
     final monitoringReady = await _ensureFaceMonitoringForMode(mode);
     if (!monitoringReady || !mounted) return;
 
@@ -174,25 +185,51 @@ class _MathGameState extends State<MathGame> with WidgetsBindingObserver {
       _isSavingScore = false; // reset flag
     });
     generateQuestion();
-    _isProctorActive = true;
+    // Deliberately not set here. `_ensureFaceMonitoringForMode` already
+    // reports the truth: it returns true for `unsupportedPlatform` so web and
+    // desktop can still play, but nothing was started there. Re-asserting the
+    // flag afterwards made it claim proctoring was running on every platform.
   }
 
   Future<bool> _ensureFaceMonitoringForMode(MathMode mode) async {
-    final status = await _faceProctor.start(
-      absenceThreshold: const Duration(seconds: 3),
-      onViolation: (event) {
-        _handleFaceViolation(
-          gameName: _gameNameFor(mode),
-          event: event,
-        );
-      },
-    );
+    // A teacher can switch lesson proctoring off for the whole class; when
+    // they have, the camera is never opened and the run is not marked
+    // unwatched - nobody expected it to be watched.
+    if (!ProctoringSettings.instance.enabledFor(isExam: false)) return true;
 
-    if (!mounted) return false;
+    // Claimed before the await for the same reason as _startFaceProctor: this
+    // takes hundreds of milliseconds, and a dispose during that window used to
+    // leave the camera running with nothing left to stop it.
+    _isProctorActive = true;
+
+    final FaceProctorStartStatus status;
+    try {
+      status = await _faceProctor.start(
+        absenceThreshold: const Duration(seconds: 3),
+        onViolation: (event) {
+          _handleFaceViolation(
+            gameName: _gameNameFor(mode),
+            event: event,
+          );
+        },
+      );
+    } catch (_) {
+      _isProctorActive = false;
+      rethrow;
+    }
+
+    if (!mounted) {
+      await _faceProctor.stop();
+      _isProctorActive = false;
+      return false;
+    }
+
+    if (status != FaceProctorStartStatus.started) {
+      _isProctorActive = false;
+    }
 
     switch (status) {
       case FaceProctorStartStatus.started:
-        _isProctorActive = true;
         return true;
       case FaceProctorStartStatus.unsupportedPlatform:
         if (!_faceSupportNoticeShown) {
@@ -206,30 +243,39 @@ class _MathGameState extends State<MathGame> with WidgetsBindingObserver {
           );
         }
         return true;
+      // These three used to return false, which aborted `startGame` outright -
+      // so declining the camera prompt once left the player staring at a start
+      // screen that would never start. Being unable to watch somebody is not a
+      // reason to stop them playing; the round runs and is recorded as
+      // unwatched instead.
       case FaceProctorStartStatus.permissionDenied:
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Camera permission is required to start the game.'),
-          ),
+        _reportProctoringUnavailable(
+          'Camera permission was declined, so this round is not being watched.',
         );
-        return false;
+        return true;
       case FaceProctorStartStatus.noFrontCamera:
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('No front camera found on this device.'),
-          ),
+        _reportProctoringUnavailable(
+          'No front camera on this device, so this round is not being watched.',
         );
-        return false;
+        return true;
       case FaceProctorStartStatus.initializationFailed:
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Unable to initialize face detection. Please try again.',
-            ),
-          ),
+        _reportProctoringUnavailable(
+          'Face detection could not start, so this round is not being watched.',
         );
-        return false;
+        return true;
     }
+  }
+
+  /// Tells the player once and flags the run, without stopping it.
+  void _reportProctoringUnavailable(String message) {
+    if (!mounted) return;
+    // Do not retry for the rest of this screen's life, or a declined
+    // permission would re-prompt on every pause/resume cycle.
+    _faceSupportNoticeShown = true;
+    _runProctored = false;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   bool _isRoundActive() {
@@ -830,6 +876,7 @@ class _MathGameState extends State<MathGame> with WidgetsBindingObserver {
         gameName: _gameNameFor(selectedMode!),
         score: score,
         difficulty: gameDifficultyModeLabel(_selectedMode),
+        proctored: _runProctored,
       );
 
       final snapshot = await userRef.get();

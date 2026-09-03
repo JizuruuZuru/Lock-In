@@ -21,7 +21,7 @@ office to steer what is being asked.
 It has two audiences and two faces:
 
 **For students** — 28 lesson games across three subjects, each drawing from a
-question bank of 5,793 hand-written English and Science questions plus
+question bank of 5,809 hand-written English and Science questions plus
 procedurally generated Math problems. Every game runs on the same loop: a
 countdown timer, a hearts system, levels that unlock harder material, and
 immediate feedback with sound and animation. On top of the lessons sits an
@@ -89,7 +89,7 @@ connection.
 | Area | What it covers |
 |---|---|
 | **Subjects** | English (13 lessons), Math (9 lessons), Science (6 lessons) |
-| **Question bank** | 5,793 bundled English and Science questions; Math generated at run time; unlimited teacher-authored questions |
+| **Question bank** | 5,809 bundled English and Science questions; Math generated at run time; unlimited teacher-authored questions |
 | **Exam mode** | 3 difficulties × 4 subject selections, mixed-subject question draw, hearts, timer, levels |
 | **Proctoring** | Front-camera face presence and orientation checks, app-leave detection, warning overlays, per-attempt logging |
 | **Accounts** | Name-and-password registration, anonymous play, optional Google account linking, onboarding, soft-delete |

@@ -9,15 +9,33 @@ import 'package:flutter_test/flutter_test.dart';
 /// These tests hold both of those promises to the numbers the README quotes.
 void main() {
   group('the bundled bank ships complete', () {
-    test('carries 5,793 questions across English and Science', () {
+    test('carries 5,809 questions across English and Science', () {
       final english =
           SubjectQuestionBank.bundledQuestionsFor(SubjectQuizType.english);
       final science =
           SubjectQuestionBank.bundledQuestionsFor(SubjectQuizType.science);
 
       expect(english, hasLength(2953));
-      expect(science, hasLength(2840));
-      expect(english.length + science.length, 5793);
+      expect(science, hasLength(2856));
+      expect(english.length + science.length, 5809);
+    });
+
+    test('the servable count is the distinct count, not the raw one', () {
+      // 24 bundled questions are written twice (one three times), so the raw
+      // list has always been larger than what a player can actually be served:
+      // a run excludes every key it has already asked, so a duplicate's second
+      // copy is unreachable. The pool de-duplicates, and this is the number
+      // that matters for "how many questions does this app have".
+      var raw = 0;
+      var distinct = 0;
+      for (final subject in SubjectQuizType.values) {
+        raw += SubjectQuestionBank.bundledQuestionsFor(subject).length;
+        distinct += SubjectQuestionBank.questionCountFor(subject);
+      }
+
+      expect(raw, 5809);
+      expect(distinct, 5784);
+      expect(distinct, lessThan(raw), reason: 'the duplicates are still in the data');
     });
 
     test('needs no network: the bank is const data inside the binary', () {

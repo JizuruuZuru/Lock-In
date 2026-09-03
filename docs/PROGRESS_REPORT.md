@@ -37,7 +37,7 @@ milestone.
 | Services | 23 |
 | Playable lesson games | 28 (English 13, Math 9, Science 6) |
 | Exam configurations | 12 (3 difficulties × 4 subject selections) |
-| Bundled questions | 5,793 (English 2,953 · Science 2,840) across 18 topic files |
+| Bundled questions | 5,809 (English 2,953 · Science 2,856); 5,784 distinct across 18 topic files |
 | Firestore collections | 5 top-level + 3 subcollections |
 | Automated tests | 136, all passing |
 
@@ -162,7 +162,7 @@ take effect.
 ### 3.6 Documentation corrected
 
 The previous `docs/CRUD_AND_API.md` claimed the app bundles "78,000 questions".
-The actual count is **5,793**, verified by counting the question literals across
+The actual count is **5,809**, verified by counting the question literals across
 all 18 topic files. The figure is corrected throughout, and every count in these
 documents was measured rather than estimated.
 

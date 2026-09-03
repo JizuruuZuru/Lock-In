@@ -3,6 +3,7 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 
+import '../../services/proctoring_settings.dart';
 import '../../services/game_result_recorder.dart';
 import '../../services/game_logger.dart';
 import '../../services/face_proctor_contract.dart';
@@ -58,6 +59,11 @@ class _PlaceValueGameState extends State<PlaceValueGame> {
   bool showIncorrectSplash = false;
   bool _showExitConfirmation = false;
   final GameSaveGate _saveGate = GameSaveGate();
+
+  /// Whether this run is actually being watched. Set false when proctoring was
+  /// wanted but the camera could not be used, so the saved score records that a
+  /// teacher was not watching this attempt.
+  bool _runProctored = true;
 
   int score = 0;
   int _levelPoints = 0;
@@ -414,6 +420,7 @@ class _PlaceValueGameState extends State<PlaceValueGame> {
         score: score,
         level: level,
         difficulty: gameDifficultyModeLabel(_selectedMode),
+        proctored: _runProctored,
         storageKey: 'place_value',
       );
     });
@@ -476,6 +483,9 @@ class _PlaceValueGameState extends State<PlaceValueGame> {
                 ),
               ),
               GameSecurityOverlay(
+                      enableFaceProctor:
+                          ProctoringSettings.instance.enabledFor(isExam: false),
+                      onProctoringUnavailable: () => _runProctored = false,
                       faceProctor: _faceProctor,
                       gameName: _gameName,
                       isActive: hasStarted && !isGameOver && !showCorrectSplash && !showIncorrectSplash && !_showExitConfirmation,

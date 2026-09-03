@@ -41,6 +41,7 @@ import '../../models/app_user_record.dart';
 import '../../services/app_settings_service.dart';
 import '../../services/connectivity_service.dart';
 import '../../services/custom_question_sync.dart';
+import '../../services/proctoring_settings.dart';
 import '../../services/google_link_service.dart';
 import '../../services/leaderboard_service.dart';
 import '../../services/sound_service.dart';
@@ -2570,6 +2571,7 @@ class _HomeMenuState extends State<HomeMenu> {
                               if (shouldSignOut == true) {
                                 resetPlayerNameCache();
                                 await CustomQuestionSync.instance.stop();
+                                await ProctoringSettings.instance.stop();
                                 await _auth.signOut();
                                 if (!mounted) return;
                                 // Back to the start screen, which asks again

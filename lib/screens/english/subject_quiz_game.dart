@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 
 import '../../data/subject_question_bank.dart';
+import '../../services/proctoring_settings.dart';
 import '../../services/game_result_recorder.dart';
 import '../../services/connectivity_service.dart';
 import '../../services/face_proctor_service.dart';
@@ -62,6 +63,21 @@ class _SubjectQuizGameState extends State<SubjectQuizGame> {
   bool showIncorrectSplash = false;
   bool _showExitConfirmation = false;
   final GameSaveGate _saveGate = GameSaveGate();
+
+  /// Whether this run is actually being watched. Set false when proctoring was
+  /// wanted but the camera could not be used, so the saved score records that a
+  /// teacher was not watching this attempt.
+  bool _runProctored = true;
+
+  /// The pause between answering and the next question.
+  ///
+  /// Was an un-cancellable `Future.delayed`. Its callback calls
+  /// `generateQuestion()`, which sets `isGameOver = false` and mints a fresh
+  /// `timerKey` - so a face violation or an app-background landing inside that
+  /// window put the "Leave / Stay" overlay on screen with a live timer
+  /// counting down underneath it, and the player lost a heart to a question
+  /// they could not see. Cancelled when the overlay locks, and on dispose.
+  Timer? _feedbackTimer;
   bool _isOffline = false;
 
   int score = 0;
@@ -94,6 +110,7 @@ class _SubjectQuizGameState extends State<SubjectQuizGame> {
 
   @override
   void dispose() {
+    _feedbackTimer?.cancel();
     GameLogger.endSession(_gameName);
     SoundService().playPageBgm(BgmPage.home);
     super.dispose();
@@ -178,7 +195,7 @@ class _SubjectQuizGameState extends State<SubjectQuizGame> {
         isGameOver = true;
       });
 
-      Future.delayed(_correctFeedbackDuration, () {
+      _feedbackTimer = Timer(_correctFeedbackDuration, () {
         if (!mounted) return;
         setState(() => showCorrectSplash = false);
 
@@ -212,7 +229,7 @@ class _SubjectQuizGameState extends State<SubjectQuizGame> {
       debugPrint('Error saving $_gameName score: $error');
     }));
 
-    Future.delayed(_incorrectFeedbackDuration, () {
+    _feedbackTimer = Timer(_incorrectFeedbackDuration, () {
       if (!mounted) return;
       setState(() => showIncorrectSplash = false);
       showGameOverScreen(incorrectAnswer);
@@ -316,6 +333,7 @@ class _SubjectQuizGameState extends State<SubjectQuizGame> {
         score: score,
         level: level,
         difficulty: gameDifficultyModeLabel(_selectedMode),
+        proctored: _runProctored,
         storageKey: '${widget.subject.name}_${safeGameKey(widget.lessonTitle ?? 'quiz')}',
       );
     });
@@ -378,6 +396,9 @@ class _SubjectQuizGameState extends State<SubjectQuizGame> {
                 ),
               ),
               GameSecurityOverlay(
+                enableFaceProctor:
+                    ProctoringSettings.instance.enabledFor(isExam: false),
+                onProctoringUnavailable: () => _runProctored = false,
                 faceProctor: _faceProctor,
                 gameName: _gameName,
                 isActive: hasStarted &&
@@ -390,6 +411,9 @@ class _SubjectQuizGameState extends State<SubjectQuizGame> {
                   setState(() {
                     isGameOver = locked;
                     if (locked) {
+                      // Drop any pending "next question" callback, or it will
+                      // restart the round behind this overlay.
+                      _feedbackTimer?.cancel();
                       showCorrectSplash = false;
                       showIncorrectSplash = false;
                       _showExitConfirmation = false;

@@ -175,7 +175,7 @@ and students are asked them inside the existing lessons.
 
 `choices` deliberately excludes the correct answer. The game engine mixes
 `correctAnswer` back in and shuffles at play time
-(`SubjectQuizQuestion.shuffled`), which is the same contract the 5,793 bundled
+(`SubjectQuizQuestion.shuffled`), which is the same contract the 5,809 bundled
 questions already use — so admin-written questions and bundled questions are
 interchangeable and one code path plays both.
 
@@ -281,6 +281,7 @@ score saves within a session update the same row instead of creating duplicates.
 | `score` | int | |
 | `difficulty` | string | Present only for games that have difficulty modes. |
 | `sessionId` | string | Duplicated into the body. |
+| `proctored` | bool | Whether the front camera was actually watching this run. **Absent** when the question does not apply - proctoring was switched off by an admin, or the platform never supports it - which is deliberately different from `false`, meaning "we tried to watch and could not". |
 | `timestamp` / `updatedAt` | timestamp | Server-stamped. |
 
 ### `leave_attempts/{autoId}`
@@ -332,12 +333,36 @@ N profile reads. A name change rewrites it on the next score save.
 One document per **answered question** in an exam — the fine-grained record that
 future analytics will read: `uid`, `gameName`, `difficulty`,
 `selectedSubjects[]`, `subject`, `topic`, `prompt`, `correctAnswer`,
-`submittedAnswer`, `isCorrect`, `score`, `level`, `timestamp`.
+`submittedAnswer`, `isCorrect`, `score`, `level`, `proctored`, `timestamp`.
 
 ### `exam_sessions/{autoId}`
 
 One document per **finished exam**: `uid`, `gameName`, `difficulty`,
-`selectedSubjects[]`, `score`, `level`, `hearts`, `attempts`, `timestamp`.
+`selectedSubjects[]`, `score`, `level`, `hearts`, `attempts`, `proctored`,
+`timestamp`.
+
+### `app_config/{docId}` — teacher-owned app settings
+
+Currently one document, `proctoring`. Readable by any signed-in device,
+writable only by an admin.
+
+| Field | Type | Notes |
+|---|---|---|
+| `faceProctorExams` | bool | Watch during Exam mode. Defaults to `true`. |
+| `faceProctorLessons` | bool | Watch during the practice games. Defaults to `true`. |
+| `updatedAt` / `updatedBy` | timestamp / uid | Audit stamp. |
+
+**Why this is not a device preference.** Proctoring is anti-cheat, so a switch
+a student could reach would defeat it. It lives here so one teacher decision
+reaches every device.
+
+**Why a missing field means `true`.** `ProctoringConfig.fromMap` falls back to
+the default for anything absent or non-boolean, so a half-written document
+cannot silently disable proctoring for a whole class. The document not existing
+at all is also valid — it just means no admin has saved yet, and the defaults
+apply. Each device also mirrors the last known values to
+`shared_preferences`, so a cold offline launch still starts a game with the
+right setting.
 
 ---
 
@@ -385,6 +410,7 @@ flowchart LR
 |---|---|---|---|---|
 | `users/{uid}` | self or admin | admin, or self as a non-disabled **student** | admin, or self **without changing `role`/`disabled`** | **never** |
 | `users/{uid}/game_logs` | self or admin | self | self | self |
+| `app_config/{docId}` | any signed-in | admin | admin | admin |
 | `users/{uid}/leave_attempts` | self or admin | self | self | self |
 | `users/{uid}/data_clear_events` | self or admin | self | self | self |
 | `quiz_questions` | any signed-in user | admin | admin | admin |
@@ -434,7 +460,7 @@ composite index setup. It is a classroom-scale trade-off, and §4 of
 
 | Store | Size |
 |---|---|
-| Bundled questions (compiled into the app) | **5,793** across 18 topic files — English 2,953, Science 2,840 |
+| Bundled questions (compiled into the app) | **5,809** across 18 topic files — English 2,953, Science 2,856. 5,784 are distinct; 25 are written twice and are de-duplicated when the pool is built. |
 | Math questions | Generated at run time, effectively unbounded |
 | Teacher-authored questions | Unbounded, in `quiz_questions` |
 | Accounts | One document per player, plus subcollections |

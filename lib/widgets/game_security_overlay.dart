@@ -22,6 +22,16 @@ class GameSecurityOverlay extends StatefulWidget {
   final bool enableFaceProctor;
   final FaceProctorService? faceProctor;
 
+  /// Fired when proctoring was wanted for this run but could not run - camera
+  /// permission denied, no front camera, or an initialisation failure.
+  ///
+  /// The game continues either way; this exists so the screen can record the
+  /// run as unwatched, which is what lets a teacher tell a proctored score from
+  /// an unproctored one. It is not fired when proctoring was switched off by an
+  /// admin, or on a platform that never supports it - neither of those is an
+  /// exam-integrity event.
+  final VoidCallback? onProctoringUnavailable;
+
   const GameSecurityOverlay({
     super.key,
     required this.gameName,
@@ -33,6 +43,7 @@ class GameSecurityOverlay extends StatefulWidget {
     this.faceAbsenceThreshold = const Duration(seconds: 3),
     this.enableFaceProctor = true,
     this.faceProctor,
+    this.onProctoringUnavailable,
   });
 
   @override
@@ -168,22 +179,41 @@ class _GameSecurityOverlayState extends State<GameSecurityOverlay>
           'Face detection anti-cheat is available only on Android/iOS.',
         );
         return;
+      // None of the three failures below stop the game any more.
+      //
+      // They used to raise a blocking "Camera required" overlay, so a child who
+      // tapped Deny once - or whose tablet has no front camera - was shut out
+      // of the whole app with no way back in. Being unable to watch somebody is
+      // not a reason to stop them learning. The run continues, the screen is
+      // told so it can record the attempt as unwatched, and the teacher sees
+      // that in the log.
       case FaceProctorStartStatus.permissionDenied:
-        await _showProctorRequiredOverlay(
-          'Camera permission is required to start the game.',
+        _reportProctoringUnavailable(
+          'Camera permission was declined, so this round is not being watched.',
         );
         return;
       case FaceProctorStartStatus.noFrontCamera:
-        await _showProctorRequiredOverlay(
-          'No front camera found on this device.',
+        _reportProctoringUnavailable(
+          'No front camera on this device, so this round is not being watched.',
         );
         return;
       case FaceProctorStartStatus.initializationFailed:
-        await _showProctorRequiredOverlay(
-          'Unable to initialize face detection. Please try again.',
+        _reportProctoringUnavailable(
+          'Face detection could not start, so this round is not being watched.',
         );
         return;
     }
+  }
+
+  /// Tells the player once, tells the screen so it can flag the run, and lets
+  /// play continue.
+  void _reportProctoringUnavailable(String message) {
+    if (!mounted) return;
+    // Do not retry for the rest of this screen's life: a denied permission
+    // would otherwise re-prompt on every pause/resume cycle.
+    _faceUnsupported = true;
+    _showProctorNotice(message);
+    widget.onProctoringUnavailable?.call();
   }
 
   void _showProctorNotice(String message) {
@@ -191,21 +221,6 @@ class _GameSecurityOverlayState extends State<GameSecurityOverlay>
     final messenger = ScaffoldMessenger.maybeOf(context);
     messenger?.hideCurrentSnackBar();
     messenger?.showSnackBar(SnackBar(content: Text(message)));
-  }
-
-  Future<void> _showProctorRequiredOverlay(String message) async {
-    if (!mounted || _isOverlayVisible || _isHandlingAttempt) return;
-    await _stopFaceProctor();
-    // Re-checked: the camera teardown above is awaited, so the overlay can be
-    // disposed between the check at the top and here.
-    if (!mounted) return;
-    widget.onLockChanged?.call(true);
-    setState(() {
-      _title = 'Camera required';
-      _message = message;
-      _didLeaveApp = false;
-      _isOverlayVisible = true;
-    });
   }
 
   Future<void> _stopFaceProctor() async {

@@ -11,6 +11,7 @@ import 'screens/home/home_menu.dart';
 import 'screens/onboarding/player_onboarding_page.dart';
 import 'services/custom_question_sync.dart';
 import 'services/leaderboard_service.dart';
+import 'services/proctoring_settings.dart';
 import 'utils/admin_theme.dart';
 import 'widgets/animated_shape_background.dart';
 
@@ -65,6 +66,11 @@ class _AppGateState extends State<AppGate> {
     // require an authenticated reader for `quiz_questions`.
     unawaited(CustomQuestionSync.instance.start().catchError((Object _) {}));
 
+    // Same treatment: the games need to know whether to open the camera, and a
+    // failure here must not block entry - the on-device copy, or the
+    // proctoring-on default, stands until Firestore answers.
+    unawaited(ProctoringSettings.instance.start().catchError((Object _) {}));
+
     Map<String, dynamic> data = <String, dynamic>{};
     try {
       final snapshot =
@@ -101,6 +107,7 @@ class _AppGateState extends State<AppGate> {
       // being reset here.
       resetPlayerNameCache();
       await CustomQuestionSync.instance.stop();
+      await ProctoringSettings.instance.stop();
       await auth.signOut();
       return _GateResult(route: _GateRoute.disabled, user: user, record: record);
     }

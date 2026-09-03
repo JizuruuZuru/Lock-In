@@ -2645,4 +2645,63 @@ const List<_LeveledQuestion> _scienceLifeScienceAndPlantsQuestions = [
       choices: ['Root', 'Bark', 'Seed coat'],
     ),
   ),
+  // --- Added so each topic reaches 60 *distinct* questions. The pool
+  // de-duplicates by topic::prompt, and these topics each had one or two
+  // questions written twice, so their servable count was 58-59.
+  _LeveledQuestion(
+    minLevel: 2,
+    question: SubjectQuizQuestion(
+      topic: 'Plant Parts',
+      instruction: 'Choose the correct plant part.',
+      prompt: 'Which part of a plant carries water from the roots up to the leaves?',
+      correctAnswer: 'the stem',
+      choices: [
+        'the petal',
+        'the seed',
+        'the fruit',
+      ],
+    ),
+  ),
+  _LeveledQuestion(
+    minLevel: 3,
+    question: SubjectQuizQuestion(
+      topic: 'Plant Needs',
+      instruction: 'Pick the best answer.',
+      prompt: 'What do plants take in from the air to help make their food?',
+      correctAnswer: 'carbon dioxide',
+      choices: [
+        'sand',
+        'salt',
+        'plastic',
+      ],
+    ),
+  ),
+  _LeveledQuestion(
+    minLevel: 2,
+    question: SubjectQuizQuestion(
+      topic: 'Plant Needs',
+      instruction: 'Pick the best answer.',
+      prompt: 'What usually happens to a plant left in a dark cupboard for several weeks?',
+      correctAnswer: 'It turns pale and weak',
+      choices: [
+        'It grows twice as fast',
+        'It changes into an animal',
+        'It makes more flowers',
+      ],
+    ),
+  ),
+  _LeveledQuestion(
+    minLevel: 3,
+    question: SubjectQuizQuestion(
+      topic: 'Pollination',
+      instruction: 'Pick the best answer.',
+      prompt: 'What is the sticky part at the top of a flower that catches pollen called?',
+      correctAnswer: 'the stigma',
+      choices: [
+        'the root',
+        'the bark',
+        'the seed coat',
+      ],
+    ),
+  ),
 ];

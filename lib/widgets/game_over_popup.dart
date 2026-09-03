@@ -98,7 +98,13 @@ class _GameOverPopupState extends State<GameOverPopup>
     // Check if this is a final game over (hearts = 0)
     final isFinalGameOver = widget.heartsRemaining == 0;
 
-    return ScaleTransition(
+    // `showDialog(barrierDismissible: false)` stops a tap outside, but not the
+    // Android system back button. Backing out of this popup left the game
+    // frozen behind it - `isGameOver` still true, the timer paused, every
+    // answer button disabled - with no way to recover but the app-bar arrow.
+    return PopScope(
+      canPop: false,
+      child: ScaleTransition(
       scale: _scaleAnimation,
       child: FadeTransition(
         opacity: _fadeAnimation,
@@ -123,6 +129,7 @@ class _GameOverPopupState extends State<GameOverPopup>
                 isFinalGameOver ? _buildFinalGameOver() : _buildAnswerReview(),
           ),
         ),
+      ),
       ),
     );
   }

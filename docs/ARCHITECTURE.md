@@ -22,7 +22,7 @@ flowchart TB
 
         subgraph domain["Domain — models/ + data/"]
             models["QuizQuestionRecord<br/>AppUserRecord<br/><i>validation lives here</i>"]
-            bank["SubjectQuestionBank<br/><i>5,793 bundled + teacher questions</i>"]
+            bank["SubjectQuestionBank<br/><i>5,809 bundled + teacher questions</i>"]
         end
 
         subgraph svc["Services — services/"]
@@ -312,8 +312,8 @@ stateDiagram-v2
     Setup --> Running: subjects + difficulty chosen
 
     Running --> FaceCheck: front camera frame
-    FaceCheck --> Running: face present and facing screen
-    FaceCheck --> Violation: no face for 3 s / looking away
+    FaceCheck --> Running: face present
+    FaceCheck --> Violation: no face for 3 s
 
     Running --> LeaveDetected: app backgrounded or route popped
     LeaveDetected --> Violation
@@ -346,7 +346,7 @@ lib/
 ├── auth_gate.dart, onboarding_gate.dart
 ├── data/
 │   ├── subject_question_bank.dart      bundled + teacher question pools
-│   └── questions/                      5,793 questions across 18 topic files
+│   └── questions/                      5,809 questions across 18 topic files
 │       ├── english/  (12 files)
 │       └── science/  (6 files)
 ├── models/                       QuizQuestionRecord, AppUserRecord (validation)

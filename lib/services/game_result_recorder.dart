@@ -34,6 +34,7 @@ Future<void> saveGameResult({
   required int level,
   String? difficulty,
   String? storageKey,
+  bool? proctored,
   Map<String, int> extraHighscoreFields = const <String, int>{},
 }) async {
   final key = storageKey ?? safeGameKey(gameName);
@@ -42,11 +43,13 @@ Future<void> saveGameResult({
     gameName: gameName,
     score: score,
     difficulty: difficulty,
+    proctored: proctored,
     extraHighscoreFields: {
       '${key}_highscore': score,
       ...extraHighscoreFields,
     },
     extraFields: {
+      if (proctored != null) '${key}_last_proctored': proctored,
       '${key}_last_score': score,
       '${key}_last_level': level,
       '${key}_last_played': FieldValue.serverTimestamp(),

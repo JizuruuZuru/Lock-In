@@ -40,10 +40,16 @@ class GameLogger {
   /// and similar latest-wins bookkeeping. They ride along in the same
   /// transaction as the highscores, which is what lets a caller drop the
   /// separate `users/{uid}` write it used to make right after this one.
+  /// [proctored] records whether the front-camera proctor was actually
+  /// watching this run. Null means the question does not apply - proctoring was
+  /// switched off by an admin, or the platform never supports it - which is
+  /// different from "we tried to watch and could not", and is why this is not a
+  /// plain bool.
   static Future<void> logGame({
     required String gameName,
     required int score,
     String? difficulty,
+    bool? proctored,
     Map<String, int> extraHighscoreFields = const <String, int>{},
     Map<String, Object?> extraFields = const <String, Object?>{},
   }) async {
@@ -62,6 +68,7 @@ class GameLogger {
       'gameKey': gameKey,
       'score': score,
       if (difficulty != null) 'difficulty': difficulty,
+      if (proctored != null) 'proctored': proctored,
       'sessionId': sessionId,
       'timestamp': now,
       'updatedAt': now,
