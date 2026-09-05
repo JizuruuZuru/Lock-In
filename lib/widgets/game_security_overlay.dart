@@ -83,6 +83,16 @@ class _GameSecurityOverlayState extends State<GameSecurityOverlay>
   /// knows.
   bool? _reportedWatching;
 
+  /// Set the moment the player answers the warning, and never cleared while
+  /// the answer is being acted on.
+  ///
+  /// `_isHandlingAttempt` is already false by the time this overlay is on
+  /// screen, so it guarded nothing here. Both answers below `await` before
+  /// they finish - the camera teardown, then the score save - and every extra
+  /// tap inside that window queued another `Navigator.pop`. Three quick taps
+  /// emptied the navigator and left a black screen.
+  bool _isResolving = false;
+
   String _title = 'Warning';
   String _message = 'You have left the app. The game will restart.';
 
@@ -148,7 +158,18 @@ class _GameSecurityOverlayState extends State<GameSecurityOverlay>
     }
 
     if (widget.isActive && !_isOverlayVisible && !_isHandlingAttempt) {
-      await _startFaceProctor();
+      // `_startFaceProctor` rethrows so a caller can see the failure, but the
+      // callers are all `unawaited`, which turned a camera-permission race into
+      // an unhandled asynchronous error - and left the run recorded as watched.
+      // Treat it as the failure it is: play continues, unwatched.
+      try {
+        await _startFaceProctor();
+      } catch (error) {
+        debugPrint('The face proctor could not start: $error');
+        _reportProctoringUnavailable(
+          'Face detection could not start, so this round is not being watched.',
+        );
+      }
     } else {
       await _stopFaceProctor();
     }
@@ -268,8 +289,16 @@ class _GameSecurityOverlayState extends State<GameSecurityOverlay>
 
   Future<void> _stopFaceProctor() async {
     if (!_isProctorRunning) return;
-    await _faceProctor.stop();
-    _isProctorRunning = false;
+    // Cleared even when `stop()` throws. `CameraController.dispose()` raising
+    // a `CameraException` is routine on Android, and leaving the flag set
+    // means `_startFaceProctor` believes a proctor is still running and never
+    // opens one again - the camera stays dark for the rest of the run while
+    // the score is still saved as watched.
+    try {
+      await _faceProctor.stop();
+    } finally {
+      _isProctorRunning = false;
+    }
   }
 
   Future<void> _handleFaceViolation(FaceViolationEvent event) async {
@@ -297,7 +326,18 @@ class _GameSecurityOverlayState extends State<GameSecurityOverlay>
     if (_isHandlingAttempt || _isOverlayVisible || !widget.isActive) return;
 
     _isHandlingAttempt = true;
-    await _stopFaceProctor();
+
+    try {
+      // Inside the guarded region, not before it. This await used to sit above
+      // the `try`, so a throwing camera teardown left `_isHandlingAttempt`
+      // stuck true - and from then on app-switch detection, face violations
+      // and the camera restart were all dead, while `_reportedWatching` stayed
+      // true so the run was still saved as proctored and still showed the
+      // "Camera on" badge. A silent anti-cheat bypass.
+      await _stopFaceProctor();
+    } catch (error) {
+      debugPrint('Could not release the camera for the warning: $error');
+    }
 
     if (mounted) {
       widget.onLockChanged?.call(true);
@@ -363,24 +403,53 @@ class _GameSecurityOverlayState extends State<GameSecurityOverlay>
   }
 
   Future<void> _stayInGame() async {
-    if (_isHandlingAttempt) return;
+    if (_isHandlingAttempt || _isResolving) return;
     SoundService().playButtonSoundNow();
     setState(() {
+      _isResolving = true;
       _isOverlayVisible = false;
       _didLeaveApp = false;
     });
     widget.onLockChanged?.call(false);
 
-    if (widget.onStay != null) {
-      await widget.onStay!();
+    // Both awaits can throw - `_startFaceProctor` deliberately rethrows, and
+    // `Permission.camera.request()` raises when a request is already in
+    // flight. Unguarded, that left `_isResolving` true for the life of the
+    // widget, and the *next* warning rendered with both buttons disabled over
+    // a frozen game: another force-quit.
+    // Two separate guards on purpose. Sharing one meant a screen callback
+    // that threw skipped the restart below, so play resumed with the camera
+    // off for the rest of the round - silently, and still recorded as watched.
+    try {
+      if (widget.onStay != null) {
+        await widget.onStay!();
+      }
+    } catch (error) {
+      debugPrint('The screen could not resume its round after Stay: $error');
     }
 
-    await _syncProctorWithActiveState();
+    try {
+      await _syncProctorWithActiveState();
+    } catch (error) {
+      debugPrint('Could not restart the proctor after Stay: $error');
+    } finally {
+      if (mounted) setState(() => _isResolving = false);
+    }
   }
 
   Future<void> _leaveGame() async {
-    if (_isHandlingAttempt) return;
+    if (_isHandlingAttempt || _isResolving) return;
     SoundService().playButtonSoundNow();
+
+    // Claimed before the first await, and the overlay deliberately stays on
+    // screen showing its busy state until the route actually pops. That gives
+    // the player something to look at during the wait, and makes a second tap
+    // impossible rather than merely unlikely.
+    if (!mounted) return;
+    setState(() {
+      _isResolving = true;
+      _didLeaveApp = false;
+    });
 
     // Every step of leaving is behind this await, so a camera that refuses to
     // release would strand the player on a screen they asked to leave.
@@ -393,10 +462,6 @@ class _GameSecurityOverlayState extends State<GameSecurityOverlay>
 
     // Nothing left to unlock or navigate if the game screen is already gone.
     if (!mounted) return;
-    setState(() {
-      _isOverlayVisible = false;
-      _didLeaveApp = false;
-    });
 
     // Deliberately *not* unlocking the screen here. `onLockChanged(false)`
     // clears `isGameOver` and hands most screens a fresh `timerKey`, which
@@ -426,6 +491,10 @@ class _GameSecurityOverlayState extends State<GameSecurityOverlay>
     // Nothing to pop, so this game is the root route. Unlock rather than
     // stranding the player on a screen with a dismissed warning and a game
     // that never resumes.
+    setState(() {
+      _isOverlayVisible = false;
+      _isResolving = false;
+    });
     widget.onLockChanged?.call(false);
   }
 
@@ -437,7 +506,8 @@ class _GameSecurityOverlayState extends State<GameSecurityOverlay>
       child: LeaveWarningOverlay(
         title: _title,
         message: _message,
-        isBusy: _isHandlingAttempt,
+        isBusy: _isHandlingAttempt || _isResolving,
+        busyText: _isResolving ? 'Leaving...' : 'Saving attempt...',
         backText: 'Stay',
         okText: 'Leave',
         onBack: _stayInGame,

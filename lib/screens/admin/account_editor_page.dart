@@ -7,6 +7,7 @@ import '../../models/app_user_record.dart';
 import '../../services/sound_service.dart';
 import '../../services/user_admin_repository.dart';
 import '../../utils/admin_theme.dart';
+import '../../widgets/offline_banner.dart';
 import '../../utils/name_credential.dart';
 import '../../utils/responsive_layout.dart';
 
@@ -256,6 +257,13 @@ class _AccountEditorPageState extends State<AccountEditorPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                // The question editor has always had this; without it a
+                // teacher on a dead connection got no warning at all,
+                // just a Save button that span.
+                const OfflineBanner(
+                  message: 'You are offline. Changes are saved on this '
+                      'device and will sync when you reconnect.',
+                ),
                 _detailsPanel(),
                 const SizedBox(height: 14),
                 if (!_isEditing) ...[

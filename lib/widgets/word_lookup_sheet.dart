@@ -56,7 +56,8 @@ class WordLookupSheet extends StatefulWidget {
   State<WordLookupSheet> createState() => _WordLookupSheetState();
 }
 
-class _WordLookupSheetState extends State<WordLookupSheet> {
+class _WordLookupSheetState extends State<WordLookupSheet>
+    with WidgetsBindingObserver {
   /// Shared across lookups so the in-memory cache survives between sheets.
   static final DictionaryApi _api = DictionaryApi();
 
@@ -67,12 +68,30 @@ class _WordLookupSheetState extends State<WordLookupSheet> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _lookupFuture = _api.lookup(widget.word);
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // This sheet builds its own `FlutterTts` rather than going through
+    // `TextToSpeechService`, so the app-level observer cannot reach it - a
+    // word being read aloud carried on talking after the app was gone.
+    if (state != AppLifecycleState.resumed) {
+      _tts.stop().catchError((Object error) {
+        debugPrint('Could not stop speech on background: $error');
+      });
+    }
+  }
+
+  @override
   void dispose() {
-    _tts.stop();
+    WidgetsBinding.instance.removeObserver(this);
+    // Unawaited, but not unhandled: the same throw that `_speak` guards
+    // against is possible here too, during teardown.
+    _tts.stop().catchError((Object error) {
+      debugPrint('Could not stop speech on dispose: $error');
+    });
     super.dispose();
   }
 
@@ -80,10 +99,26 @@ class _WordLookupSheetState extends State<WordLookupSheet> {
     setState(() => _lookupFuture = _api.lookup(widget.word));
   }
 
+  /// Guarded, because a device with no TTS engine throws here - and this
+  /// widget builds its own `FlutterTts` rather than going through
+  /// `TextToSpeechService`, which already catches exactly this. Unhandled, the
+  /// tap simply did nothing and said nothing.
   Future<void> _speak(String word) async {
-    await _tts.setLanguage('en-US');
-    await _tts.setSpeechRate(0.42);
-    await _tts.speak(word);
+    try {
+      await _tts.setLanguage('en-US');
+      await _tts.setSpeechRate(0.42);
+      await _tts.speak(word);
+    } catch (error) {
+      debugPrint('Could not speak "$word": $error');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(
+            content: Text('This device cannot read words out loud.'),
+          ),
+        );
+    }
   }
 
   @override

@@ -10,9 +10,18 @@ import '../../utils/name_credential.dart';
 import '../../widgets/animated_shape_background.dart';
 import '../../widgets/error_dialog.dart';
 import '../../widgets/terms_dialog.dart';
+import 'login_page.dart';
 
 class RegisterScreen extends StatefulWidget {
-  const RegisterScreen({super.key});
+  /// Called instead of popping, when this screen *is* the current screen
+  /// rather than a pushed route.
+  ///
+  /// `AppGate` renders it directly for an account that still has no password,
+  /// and there is nothing underneath to pop back to. The same two-way entry
+  /// [PlayerOnboardingPage] already handles.
+  final VoidCallback? onFinished;
+
+  const RegisterScreen({super.key, this.onFinished});
 
   @override
   State<RegisterScreen> createState() => _RegisterScreenState();
@@ -219,7 +228,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       // falls through to the shared kid-safe mapper.
       final message = switch (e.code) {
         'email-already-in-use' || 'credential-already-in-use' =>
-          'An account already exists for $_fullName. Please login using your first name, last name, and password.',
+          'An account already exists for $_fullName. Sign in with the email address on that account.',
         _ => authErrorMessage(e, fallback: 'Could not create your account. Please try again.'),
       };
       await _showErrorDialog(message);
@@ -232,10 +241,94 @@ class _RegisterScreenState extends State<RegisterScreen> {
       if (mounted) {
         setState(() => _loading = false);
         if (_registeredSuccessfully) {
-          Navigator.pop(context, true);
+          _leave(registered: true);
         }
       }
     }
+  }
+
+  /// Hands control back the way this screen was entered.
+  void _leave({required bool registered}) {
+    final onFinished = widget.onFinished;
+    if (onFinished != null) {
+      onFinished();
+      return;
+    }
+    if (Navigator.of(context).canPop()) {
+      Navigator.pop(context, registered);
+    }
+  }
+
+  /// Leaving without a password means leaving without an account.
+  ///
+  /// An anonymous session carries no credential at all: there is no way to
+  /// sign back into it, so closing the app, clearing its data, or picking up a
+  /// different tablet loses the name, the age, and every score. Backing out of
+  /// this screen used to drop the player straight into the games on exactly
+  /// that footing, permanently. Now it asks first, and a player who means it
+  /// is signed out and returned to the start rather than left holding an
+  /// account nobody can ever get back into.
+  ///
+  /// Reached from the login screen or the profile tab there is nothing at
+  /// stake, so it just goes back.
+  Future<void> _handleBack() async {
+    if (_loading) return;
+    SoundService().playButtonSoundNow();
+
+    final user = _auth.currentUser;
+    if (user == null || !user.isAnonymous) {
+      _leave(registered: false);
+      return;
+    }
+
+    final leave = await _confirmLeaveSetup();
+    if (leave != true || !mounted) return;
+
+    setState(() => _loading = true);
+    try {
+      await _auth.signOut();
+    } catch (error) {
+      debugPrint('Could not sign out of the unfinished session: $error');
+    }
+    if (!mounted) return;
+    setState(() => _loading = false);
+    _leave(registered: false);
+  }
+
+  Future<bool?> _confirmLeaveSetup() {
+    return showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: _panelColor,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: const BorderSide(color: _inkColor, width: 2.2),
+        ),
+        title: const Text(
+          'Leave without a password?',
+          style: TextStyle(fontWeight: FontWeight.w900, color: _inkColor),
+        ),
+        content: const Text(
+          'Without a password there is no way to sign back in, so your name, '
+          'age, and scores would be lost as soon as you close the app.',
+          style: TextStyle(fontWeight: FontWeight.w600, height: 1.35),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Keep setting up'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFD84315),
+            ),
+            child: const Text('Leave'),
+          ),
+        ],
+      ),
+    );
   }
 
   ThemeData _buildTheme(BuildContext context) {
@@ -322,22 +415,34 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // `canPop: false` routes the Android back gesture into the same handler
+    // the arrow uses, so it cannot slip past the confirmation and strand the
+    // player on a password-less account.
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (bool didPop, Object? result) {
+        if (didPop) return;
+        _handleBack();
+      },
+      child: _buildScreen(context),
+    );
+  }
+
+  Widget _buildScreen(BuildContext context) {
     return Theme(
       data: _buildTheme(context),
       child: Scaffold(
         backgroundColor: Colors.transparent,
         appBar: AppBar(
           automaticallyImplyLeading: false,
-          leading: Navigator.of(context).canPop()
-              ? IconButton(
-                  onPressed: () {
-                    SoundService().playButtonSoundNow();
-                    Navigator.of(context).maybePop();
-                  },
-                  icon: const Icon(Icons.arrow_back),
-                  tooltip: 'Back',
-                )
-              : null,
+          // Always offered now, even when there is nothing to pop back to:
+          // rendered by `AppGate` for an account with no password, this is the
+          // only way out, and it signs out rather than popping.
+          leading: IconButton(
+            onPressed: _loading ? null : _handleBack,
+            icon: const Icon(Icons.arrow_back),
+            tooltip: 'Back',
+          ),
           title: const Text('Create Your Account'),
         ),
         body: _buildBackground(
@@ -446,7 +551,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                 child: GestureDetector(
                                   onTap: () {
                                     SoundService().playButtonSoundNow();
-                                    Navigator.pop(context);
+                                    // Not a bare `Navigator.pop`. `AppGate`
+                                    // renders this screen as the *root* route
+                                    // for an account with no password, where
+                                    // popping empties the navigator and leaves
+                                    // a black screen - and it never opened the
+                                    // login screen anyway, which is the one
+                                    // thing the link says it does.
+                                    Navigator.of(context).push(
+                                      MaterialPageRoute<void>(
+                                        builder: (_) => const LoginPage(),
+                                      ),
+                                    );
                                   },
                                   child: const Text(
                                     'Already have an account? Login',

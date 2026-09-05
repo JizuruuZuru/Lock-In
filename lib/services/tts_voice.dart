@@ -57,6 +57,33 @@ enum VoiceQuality {
   }
 }
 
+/// Android reports latency as one of the integer constants 100-500 from
+/// `TextToSpeech.Voice.getLatency()`, which `VoiceQuality.parse` does not
+/// recognise - so every voice scored 0 and the "lower latency wins" tie-break
+/// never fired, leaving voices to be chosen alphabetically. iOS sends the
+/// quality words, which still parse.
+///
+/// Rank 0 also sorts *first*, so an unreadable value used to read as the best
+/// possible latency; anything unrecognised now sorts last instead.
+int _latencyRank(String? raw) {
+  final value = raw?.trim();
+  if (value == null || value.isEmpty) return _unknownLatencyRank;
+
+  final asInt = int.tryParse(value);
+  if (asInt != null) {
+    // 100 is `LATENCY_VERY_LOW`, 500 is `LATENCY_VERY_HIGH`. Lower is better,
+    // which is the order the comparator already wants.
+    return asInt;
+  }
+
+  final quality = VoiceQuality.parse(value);
+  if (quality == VoiceQuality.unknown) return _unknownLatencyRank;
+  return quality.rank;
+}
+
+/// Sorts behind every voice that did report a latency.
+const int _unknownLatencyRank = 1 << 20;
+
 /// One voice the platform offers, with the properties that decide whether it
 /// is worth using.
 @immutable
@@ -109,7 +136,7 @@ class TtsVoice {
       networkRequired: (raw['network_required'] ?? '').toString() == '1' ||
           features.contains('networkconnectionrequired'),
       notInstalled: features.contains('notinstalled'),
-      latencyRank: VoiceQuality.parse(raw['latency']?.toString()).rank,
+      latencyRank: _latencyRank(raw['latency']?.toString()),
     );
   }
 

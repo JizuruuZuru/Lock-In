@@ -5,6 +5,7 @@ import 'package:firebase_core/firebase_core.dart';
 import '../models/app_user_record.dart';
 import '../utils/firebase_options.dart';
 import '../utils/name_credential.dart';
+import 'game_result_recorder.dart';
 
 /// Thrown when an account write is rejected before it reaches Firebase.
 class AccountValidationException implements Exception {
@@ -201,10 +202,15 @@ class UserAdminRepository {
       }
     }
 
-    await _collection.doc(record.uid).update({
-      ...record.toUpdateMap(),
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
+    // Bounded, like every write in `QuestionRepository`. Offline a write
+    // future never completes, so awaiting it left the editor's Save button a
+    // permanent spinner - and the discard prompt then talked the teacher into
+    // throwing away an edit that was already stored locally and would have
+    // synced.
+    await saveBeforeLeaving(() => _collection.doc(record.uid).update({
+          ...record.toUpdateMap(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        }));
   }
 
   /// Refuses a role change that would remove the caller's own access, or the

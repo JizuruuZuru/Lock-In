@@ -18,7 +18,7 @@ String authErrorMessage(Object error, {required String fallback}) {
 
   return switch (error.code) {
     'user-not-found' || 'invalid-credential' || 'wrong-password' =>
-      'No account matched that name and password. Create an account first or '
+      'No account matched that email and password. Create an account first or '
           'check your spelling.',
     'email-already-in-use' =>
       'An account already uses that first and last name. Try a different '

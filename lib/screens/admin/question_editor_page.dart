@@ -156,9 +156,18 @@ class _QuestionEditorPageState extends State<QuestionEditorPage> {
 
   /// Re-runs validation only once the admin has already hit save, so the form
   /// does not shout at them while they are still typing the first field.
+  /// Rebuilds on every keystroke, and re-runs validation only once something
+  /// has already failed.
+  ///
+  /// It used to return early on a clean form, so nothing rebuilt while the
+  /// admin typed - and the "Student preview" panel, which reads `_buildRecord()`
+  /// live, sat on its placeholders for the whole authoring session. It only
+  /// came alive after a *failed* save populated `_errors`, which made it look
+  /// random rather than broken.
   void _revalidateIfNeeded() {
-    if (_errors.isEmpty) return;
-    setState(() => _errors = _buildRecord().validate());
+    setState(() {
+      if (_errors.isNotEmpty) _errors = _buildRecord().validate();
+    });
   }
 
   void _addWrongAnswer() {
@@ -171,7 +180,11 @@ class _QuestionEditorPageState extends State<QuestionEditorPage> {
     // `_revalidateIfNeeded` calls setState itself, so calling it from inside a
     // setState callback was a nested setState - a double markNeedsBuild with
     // unclear intent. One rebuild does both jobs.
-    _wrongControllers.removeAt(index).dispose();
+    // Disposed after the rebuild, not before it. The `TextField` still holds
+    // this controller until the frame lands, so a pending keystroke from the
+    // soft keyboard would reach a disposed `ChangeNotifier`.
+    final removed = _wrongControllers.removeAt(index);
+    WidgetsBinding.instance.addPostFrameCallback((_) => removed.dispose());
     setState(() {
       if (_errors.isNotEmpty) _errors = _buildRecord().validate();
     });

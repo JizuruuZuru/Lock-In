@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -5,6 +7,7 @@ import 'utils/firebase_options.dart';
 import 'app_gate.dart';
 import 'services/app_settings_service.dart';
 import 'services/sound_service.dart';
+import 'services/text_to_speech_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -53,7 +56,37 @@ class BrainTrainerApp extends StatefulWidget {
   State<BrainTrainerApp> createState() => _BrainTrainerAppState();
 }
 
-class _BrainTrainerAppState extends State<BrainTrainerApp> {
+/// Holds the app's one lifecycle observer.
+///
+/// Nothing here was aware of whether the app was on screen: music kept
+/// playing, a word being read aloud kept talking, and sound effects fired into
+/// whatever the player had switched to. The game screens do observe the
+/// lifecycle, but only for the anti-cheat leave detector, which deliberately
+/// has nothing to do with audio - so this is the right level to answer it.
+class _BrainTrainerAppState extends State<BrainTrainerApp>
+    with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    switch (state) {
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.paused:
+      case AppLifecycleState.hidden:
+      case AppLifecycleState.detached:
+        unawaited(SoundService().pauseForBackground());
+        // Speech is not resumed on return: finishing a word the player walked
+        // away from mid-sentence is worse than dropping it.
+        unawaited(TextToSpeechService().stop());
+      case AppLifecycleState.resumed:
+        unawaited(SoundService().resumeFromForeground());
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -73,6 +106,7 @@ class _BrainTrainerAppState extends State<BrainTrainerApp> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     // Dispose the sound service when the app is terminated
     SoundService().dispose();
     super.dispose();

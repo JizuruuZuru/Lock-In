@@ -15,6 +15,19 @@ class AppSettingsService {
   static const String _musicLevelKey = 'lockin.settings.music_level.v1';
   static const String _sfxLevelKey = 'lockin.settings.sfx_level.v1';
 
+  /// The address the last successful sign-in on this device used, when that
+  /// sign-in was by email rather than by name.
+  ///
+  /// Confirming a recovery address *replaces* an account's sign-in address, so
+  /// name-and-password stops working for that child - and nothing on the login
+  /// screen can discover that, because the security rules only let a signed-in
+  /// player read their own profile. Remembering it here is what stops the same
+  /// child having to fail a login every time they come back to their own
+  /// tablet. Device-level on purpose: it describes this device's habit, not
+  /// any one account's truth.
+  static const String _lastEmailSignInKey =
+      'lockin.settings.last_email_sign_in.v1';
+
   static const double minBrightness = 0.6;
   static const double maxBrightness = 1.3;
 
@@ -49,6 +62,28 @@ class AppSettingsService {
     } catch (error) {
       debugPrint('Could not read saved settings: $error');
     }
+  }
+
+  /// The address to open the login screen with, or null to start on the name
+  /// fields.
+  Future<String?> lastEmailSignIn() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final value = prefs.getString(_lastEmailSignInKey)?.trim();
+      return (value == null || value.isEmpty) ? null : value;
+    } catch (error) {
+      debugPrint('Could not read the last sign-in mode: $error');
+      return null;
+    }
+  }
+
+  /// Records how the last successful sign-in went. Passing null forgets it,
+  /// which is what a successful *name* sign-in means.
+  void saveLastEmailSignIn(String? email) {
+    final value = email?.trim();
+    _write((prefs) => value == null || value.isEmpty
+        ? prefs.remove(_lastEmailSignInKey)
+        : prefs.setString(_lastEmailSignInKey, value));
   }
 
   void setBrightness(double value) {

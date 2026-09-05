@@ -24,6 +24,15 @@ class NumberPad extends StatelessWidget {
   final String input;
   final Function(String) onNumberTap;
   final VoidCallback onClear;
+
+  /// Deletes the last character. Optional so existing callers keep working,
+  /// falling back to [onClear].
+  ///
+  /// Without it there was no way to correct a single digit: the key drawn as a
+  /// backspace, and the hardware Backspace, both wiped the whole answer -
+  /// mid-question, with the timer running. `AlphabetKeyboard` has always had
+  /// this; the number pad simply never did.
+  final VoidCallback? onBackspace;
   final VoidCallback onSubmit;
   final bool isDisabled;
   final bool showSignToggle;
@@ -39,6 +48,7 @@ class NumberPad extends StatelessWidget {
     required this.input,
     required this.onNumberTap,
     required this.onClear,
+    this.onBackspace,
     required this.onSubmit,
     required this.isDisabled,
     this.showSignToggle = false,
@@ -280,7 +290,7 @@ class NumberPad extends StatelessWidget {
 
     final key = event.logicalKey;
     if (key == LogicalKeyboardKey.backspace) {
-      onClear();
+      (onBackspace ?? onClear)();
       return KeyEventResult.handled;
     }
     if (key == LogicalKeyboardKey.enter ||
@@ -391,7 +401,7 @@ class NumberPad extends StatelessWidget {
       width: size,
       height: size,
       child: ElevatedButton(
-        onPressed: isDisabled ? null : onClear,
+        onPressed: isDisabled ? null : (onBackspace ?? onClear),
         style: ElevatedButton.styleFrom(
           backgroundColor: scheme.surfaceContainerHighest,
           foregroundColor: scheme.onSurfaceVariant,

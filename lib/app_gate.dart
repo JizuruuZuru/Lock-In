@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 
 import 'models/app_user_record.dart';
 import 'screens/admin/admin_dashboard_page.dart';
+import 'screens/auth/register_page.dart';
 import 'screens/auth/welcome_page.dart';
 import 'screens/home/home_menu.dart';
 import 'screens/onboarding/player_onboarding_page.dart';
@@ -17,7 +18,7 @@ import 'utils/admin_theme.dart';
 import 'widgets/animated_shape_background.dart';
 
 /// Where the gate decided to send the player.
-enum _GateRoute { welcome, onboarding, home, admin, disabled }
+enum _GateRoute { welcome, onboarding, secureAccount, home, admin, disabled }
 
 /// The app's single entry decision point.
 ///
@@ -143,6 +144,24 @@ class _AppGateState extends State<AppGate> {
       );
     }
 
+    // Still anonymous with a finished profile: they answered every question
+    // and then backed out of setting a password. An anonymous session carries
+    // no credential, so it cannot be signed into - close the app, clear its
+    // data, or pick up another tablet and the name, age, and every score are
+    // gone, with nothing the child or a teacher can do about it.
+    //
+    // The password screen used to be a pushed route that could simply be
+    // dismissed. Checking here as well catches the accounts that already got
+    // through that gap, on their very next launch.
+    if (user.isAnonymous) {
+      return _GateResult(
+        route: _GateRoute.secureAccount,
+        user: user,
+        record: record,
+        rawData: data,
+      );
+    }
+
     return _GateResult(route: _GateRoute.home, user: user, record: record);
   }
 
@@ -189,6 +208,9 @@ class _AppGateState extends State<AppGate> {
               initialData: result.rawData,
               onFinished: _reload,
             ),
+          // Rendered rather than pushed, so it has nowhere to pop back to -
+          // hence the `onFinished` callback, the same shape onboarding uses.
+          _GateRoute.secureAccount => RegisterScreen(onFinished: _reload),
         };
       },
     );

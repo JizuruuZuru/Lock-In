@@ -67,6 +67,15 @@ class _MathGameState extends State<MathGame> with WidgetsBindingObserver {
   bool _processingLeaveAttempt = false;
   bool _showLeaveWarning = false;
   bool _showExitConfirmation = false;
+
+  /// Set the moment the player commits to leaving, and never cleared.
+  ///
+  /// Every exit path below `await`s a save before it pops, and
+  /// `saveBeforeLeaving` deliberately waits up to three seconds. The Leave
+  /// button stayed live for that whole window, so each extra tap queued
+  /// another `Navigator.pop` - a few quick taps emptied the navigator and left
+  /// a black screen.
+  bool _isLeavingScreen = false;
   bool _suspendLeaveDetector = false;
   String _leaveWarningMessage =
       'You have left the app. The game will restart.';
@@ -93,7 +102,7 @@ class _MathGameState extends State<MathGame> with WidgetsBindingObserver {
   Timer? _feedbackTimer;
 
   // 🔥 duplicate prevention
-  bool _isSavingScore = false;
+  final GameSaveGate _saveGate = GameSaveGate();
 
   static String _gameNameFor(MathMode mode) => 'Math Game (${mode.name})';
 
@@ -197,7 +206,6 @@ class _MathGameState extends State<MathGame> with WidgetsBindingObserver {
       _showExitConfirmation = false;
       _suspendLeaveDetector = false;
       _leaveAttemptsThisRun = 0;
-      _isSavingScore = false; // reset flag
     });
     generateQuestion();
     // Deliberately not set here. `_ensureFaceMonitoringForMode` already
@@ -486,11 +494,34 @@ class _MathGameState extends State<MathGame> with WidgetsBindingObserver {
     startGame(currentMode);
   }
 
-  void _backFromLeaveWarning() {
-    if (_processingLeaveAttempt) return;
+  /// Leaves the game, like the identical button in the other ten games.
+  ///
+  /// It used to reset back to this screen's own start panel instead, so the
+  /// same button, in the same dialog, meant "quit" in ten games and "start
+  /// over" in this one - on the two screens a proctoring violation is most
+  /// likely to fire. The score is already saved by the violation handler that
+  /// raised this warning, so there is nothing left to write here.
+  Future<void> _backFromLeaveWarning() async {
+    if (_processingLeaveAttempt || _isLeavingScreen) return;
+    setState(() => _isLeavingScreen = true);
 
-    unawaited(_stopFaceProctor());
+    try {
+      await _stopFaceProctor();
+    } catch (error) {
+      debugPrint('Could not release the camera while leaving: $error');
+    }
+    if (!mounted) return;
+
+    final navigator = Navigator.of(context);
+    if (navigator.canPop()) {
+      navigator.pop();
+      return;
+    }
+
+    // Nothing to pop, so fall back to what this used to do unconditionally:
+    // return to the start panel rather than strand the player.
     setState(() {
+      _isLeavingScreen = false;
       _showLeaveWarning = false;
       selectedMode = null;
       pendingMode = null;
@@ -533,6 +564,8 @@ class _MathGameState extends State<MathGame> with WidgetsBindingObserver {
     if (!_showExitConfirmation) return;
 
     setState(() {
+      // Leaving was abandoned; the Leave button must work again.
+      _isLeavingScreen = false;
       _showExitConfirmation = false;
       _suspendLeaveDetector = false;
       isGameOver = false;
@@ -545,6 +578,8 @@ class _MathGameState extends State<MathGame> with WidgetsBindingObserver {
 
   Future<void> _confirmExitFromBack() async {
     if (_processingLeaveAttempt) return;
+    if (_isLeavingScreen) return;
+    setState(() => _isLeavingScreen = true);
 
     // Best-effort: a camera that refuses to release must not strand the player
     // on a screen they asked to leave.
@@ -580,7 +615,18 @@ class _MathGameState extends State<MathGame> with WidgetsBindingObserver {
     // hands `maybePop` straight back to `_onAppBarBackPressed`, which then
     // returns immediately because `_showExitConfirmation` is still true - so
     // the Leave button did nothing whatsoever.
-    Navigator.pop(context);
+    // Guarded as a backstop: popping the last route is what turns the
+    // screen black, and the flag above should already have made this
+    // unreachable.
+    final navigator = Navigator.of(context);
+    if (navigator.canPop()) {
+      navigator.pop();
+      return;
+    }
+
+    // Nothing to pop, so this screen is the root route. Release the claim
+    // rather than leaving it permanently unleavable.
+    if (mounted) setState(() => _isLeavingScreen = false);
   }
 
   Future<void> _onAppBarBackPressed() async {
@@ -594,11 +640,30 @@ class _MathGameState extends State<MathGame> with WidgetsBindingObserver {
       return;
     }
 
+    // Claimed only once leaving is genuinely under way. Setting it before
+    // the branch above put the confirmation dialog on screen with
+    // `isBusy: true`, which disables *both* its buttons - and this handler
+    // then returned at the guard, so the arrow and the Android gesture were
+    // dead too. The only way out was to force-quit the app.
+    if (_isLeavingScreen) return;
+    setState(() => _isLeavingScreen = true);
+
     // `Navigator.pop`, not `maybePop`. This screen's own
     // `PopScope(canPop: false)` intercepts `maybePop` and calls this handler
     // again, which calls `maybePop` again - an endless loop, so the back arrow
     // never left the mode panel.
-    Navigator.pop(context);
+    // Guarded as a backstop: popping the last route is what turns the
+    // screen black, and the flag above should already have made this
+    // unreachable.
+    final navigator = Navigator.of(context);
+    if (navigator.canPop()) {
+      navigator.pop();
+      return;
+    }
+
+    // Nothing to pop, so this screen is the root route. Release the claim
+    // rather than leaving it permanently unleavable.
+    if (mounted) setState(() => _isLeavingScreen = false);
   }
 
   String modeDisplayName(MathMode mode) {
@@ -628,68 +693,77 @@ class _MathGameState extends State<MathGame> with WidgetsBindingObserver {
     return List.generate(count, (_) => rand.nextInt(maxNumber) + 1);
   }
 
+  /// Builds a random-operator question whose answer is both exact and
+  /// reachable on the number pad.
+  ///
+  /// Every question stays inside **one precedence tier** - either `+`/`-` or
+  /// `x`/`÷` - so evaluating strictly left to right, which is what this does,
+  /// *is* the standard order of operations.
+  ///
+  /// Mixing the tiers and evaluating left to right anyway is what this used to
+  /// do, and it marked correct answers wrong: `5 + 3 x 2` was scored as 16, so
+  /// a child who multiplied first - exactly as this app's own Order of
+  /// Operations game teaches - lost a heart for being right.
+  ///
+  /// Two more things it used to get wrong. The chain is now built forward from
+  /// a seed, so every division is exact by construction; the old code patched
+  /// divisions afterwards in a loop whose later iterations overwrote the very
+  /// numbers earlier ones had just made divisible, and it divided the *running
+  /// total* rather than the number it had fixed, so `7 - 2 ÷ 3` truncated to an
+  /// unreachable 1. And subtraction never takes more than is there, because the
+  /// number pad cannot enter a minus sign.
   String generateRandomQuestion(int numbersCount, int maxNumber) {
     final rand = Random();
-    final operators = ['+', '-', 'x', '÷'];
-    
-    // Start with random numbers
-    final numbers = List.generate(numbersCount, (_) => rand.nextInt(maxNumber) + 1);
-    final ops = List.generate(numbersCount - 1, (_) => operators[rand.nextInt(4)]);
-    
-    // Fix divisions to have no remainders with progressive difficulty
-    for (int i = 0; i < ops.length; i++) {
-      if (ops[i] == '÷') {
-        // Scale division difficulty with level
-        int quotientMax;
-        if (level <= 3) {
-          quotientMax = 10;
-        } else if (level <= 6) {
-          quotientMax = 15;
-        } else if (level <= 10) {
-          quotientMax = 20;
-        } else if (level <= 20) {
-          quotientMax = 30;
+    final additive = rand.nextBool();
+
+    // Five chained multiplications is not mental arithmetic.
+    final count = additive ? numbersCount : min(numbersCount, 3);
+
+    final numbers = <int>[rand.nextInt(maxNumber) + 1];
+    final ops = <String>[];
+    var result = numbers.first;
+
+    for (var i = 1; i < count; i++) {
+      if (additive) {
+        if (rand.nextBool() && result >= 2) {
+          final take = rand.nextInt(result - 1) + 1;
+          ops.add('-');
+          numbers.add(take);
+          result -= take;
         } else {
-          quotientMax = 50;
+          final add = rand.nextInt(maxNumber) + 1;
+          ops.add('+');
+          numbers.add(add);
+          result += add;
         }
-        
-        int divisor = numbers[i + 1];
-        if (divisor == 0 || divisor == 1) {
-          divisor = rand.nextInt(9) + 2; // 2-10
-          numbers[i + 1] = divisor;
-        }
-        
-        // Make the division clean by ensuring dividend is divisible by divisor
-        final quotient = rand.nextInt(quotientMax) + 1;
-        numbers[i] = divisor * quotient;
+        continue;
+      }
+
+      // Only ever divide by something that really divides the running total.
+      final divisors = <int>[
+        for (var d = 2; d <= 12 && d <= result; d++)
+          if (result % d == 0) d,
+      ];
+      if (rand.nextBool() && divisors.isNotEmpty) {
+        final divisor = divisors[rand.nextInt(divisors.length)];
+        ops.add('÷');
+        numbers.add(divisor);
+        result ~/= divisor;
+      } else {
+        final factor = rand.nextInt(8) + 2;
+        ops.add('x');
+        numbers.add(factor);
+        result *= factor;
       }
     }
-    
-    // Calculate the correct answer
-    int result = numbers[0];
-    for (int i = 1; i < numbersCount; i++) {
-      switch (ops[i - 1]) {
-        case '+':
-          result += numbers[i];
-          break;
-        case '-':
-          result -= numbers[i];
-          break;
-        case 'x':
-          result *= numbers[i];
-          break;
-        case '÷':
-          result = result ~/ numbers[i]; // integer division
-          break;
-      }
-    }
-    
+
     correctAnswer = result;
-    String questionText = numbers[0].toString();
-    for (int i = 1; i < numbersCount; i++) {
-      questionText += ' ${ops[i - 1]} ${numbers[i]}';
+
+    final buffer = StringBuffer(numbers.first.toString());
+    for (var i = 1; i < numbers.length; i++) {
+      buffer.write(' ${ops[i - 1]} ${numbers[i]}');
     }
-    return '$questionText = ?';
+    return '$buffer = ?';
   }
 
   void generateQuestion() {
@@ -831,6 +905,15 @@ class _MathGameState extends State<MathGame> with WidgetsBindingObserver {
     });
   }
 
+  /// Deletes the last character, for the backspace key.
+  void backspaceInput() {
+    setState(() {
+      if (input.isNotEmpty) {
+        input = input.substring(0, input.length - 1);
+      }
+    });
+  }
+
   void submitInput() {
     if (isGameOver) return;
 
@@ -947,11 +1030,15 @@ class _MathGameState extends State<MathGame> with WidgetsBindingObserver {
     );
   }
 
-  // 🔧 UPDATED saveScore with session-based logging to prevent duplicates
+  /// Uses [GameSaveGate] like the other eleven screens.
+  ///
+  /// This was the last holdout on a bare `if (_isSavingScore) return;` guard -
+  /// the exact pattern `GameSaveGate`'s own doc calls a data-loss path. A heart
+  /// loss fires an unawaited save; on classroom Wi-Fi that runs for seconds,
+  /// and any save started in that window returned instantly having written
+  /// nothing. A player could climb from 7 to 10, leave, and find 7 recorded.
   Future<void> saveScore() async {
-    if (_isSavingScore) return;
-    _isSavingScore = true;
-    try {
+    await _saveGate.run(() async {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null || selectedMode == null) return;
 
@@ -993,11 +1080,7 @@ class _MathGameState extends State<MathGame> with WidgetsBindingObserver {
           proctored: _runProctored,
         );
       }
-    } catch (e) {
-      debugPrint('Error in saveScore (Math): $e');
-    } finally {
-      _isSavingScore = false;
-    }
+    });
   }
 
   @override
@@ -1069,6 +1152,8 @@ class _MathGameState extends State<MathGame> with WidgetsBindingObserver {
                     message: 'Your current progress in this game will be lost.',
                     onOk: _confirmExitFromBack,
                     onBack: _cancelExitConfirmation,
+                    isBusy: _isLeavingScreen,
+                    busyText: 'Leaving...',
                     okText: 'Leave',
                     backText: 'Stay',
                   ),
@@ -1078,7 +1163,10 @@ class _MathGameState extends State<MathGame> with WidgetsBindingObserver {
                   child: LeaveWarningOverlay(
                     title: 'Warning',
                     message: _leaveWarningMessage,
-                    isBusy: _processingLeaveAttempt,
+                    isBusy: _processingLeaveAttempt || _isLeavingScreen,
+                    busyText: _isLeavingScreen
+                        ? 'Leaving...'
+                        : 'Saving attempt...',
                     okText: 'Leave',
                     backText: 'Stay',
                     onOk: _backFromLeaveWarning,
@@ -1358,6 +1446,13 @@ class _MathGameState extends State<MathGame> with WidgetsBindingObserver {
                     onTimeUp: () {
                       setState(() {
                         isGameOver = true;
+                        // Running out of time costs a heart, exactly as a wrong
+                        // answer does. Without this the timer was decorative:
+                        // the game-over popup offered "Next", hearts were
+                        // untouched, and a player could skip every question
+                        // they could not answer, forever - on two screens that
+                        // share a leaderboard with ten that cannot.
+                        if (hearts > 0) hearts--;
                       });
                       // 🔥 STOP CAMERA IMMEDIATELY ON TIMEOUT
                       unawaited(_stopFaceProctor());
@@ -1418,6 +1513,7 @@ class _MathGameState extends State<MathGame> with WidgetsBindingObserver {
             isDisabled: isGameOver,
             onNumberTap: appendInput,
             onClear: clearInput,
+                    onBackspace: backspaceInput,
             onSubmit: submitInput,
             showSignToggle: selectedMode == MathMode.subtract, 
           ),

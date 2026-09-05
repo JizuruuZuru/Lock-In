@@ -8,6 +8,12 @@ class LeaveWarningOverlay extends StatefulWidget {
   final VoidCallback onOk;
   final VoidCallback onBack;
   final bool isBusy;
+
+  /// What the spinner says while [isBusy]. Leaving and recording an attempt
+  /// are different waits, and telling a child "Saving attempt..." while the
+  /// game is closing is simply wrong.
+  final String busyText;
+
   final String okText;
   final String backText;
 
@@ -18,6 +24,7 @@ class LeaveWarningOverlay extends StatefulWidget {
     required this.onOk,
     required this.onBack,
     this.isBusy = false,
+    this.busyText = 'Saving attempt...',
     this.okText = 'Leave',
     this.backText = 'Stay',
   });
@@ -85,9 +92,9 @@ class _LeaveWarningOverlayState extends State<LeaveWarningOverlay> {
                   child: CircularProgressIndicator(strokeWidth: 2.4),
                 ),
                 const SizedBox(height: 10),
-                const Text(
-                  'Saving attempt...',
-                  style: TextStyle(
+                Text(
+                  widget.busyText,
+                  style: const TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
                     color: Color(0xFF5D4037),

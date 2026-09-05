@@ -37,6 +37,14 @@ class AppUserRecord {
   final bool disabled;
   final bool isAnonymous;
   final bool profileComplete;
+
+  /// The real address the player confirmed, empty until they do.
+  ///
+  /// Every account signs in with a made-up `@lockinplayers.app` credential
+  /// built from the child's name, which no mail can reach - so an account
+  /// without this is one nobody can recover when the password is forgotten.
+  final String recoveryEmail;
+  final bool recoveryEmailVerified;
   final int highscore;
   final int cheatAttempts;
   final String? lastGame;
@@ -56,6 +64,8 @@ class AppUserRecord {
     this.disabled = false,
     this.isAnonymous = false,
     this.profileComplete = false,
+    this.recoveryEmail = '',
+    this.recoveryEmailVerified = false,
     this.highscore = 0,
     this.cheatAttempts = 0,
     this.lastGame,
@@ -68,6 +78,10 @@ class AppUserRecord {
   static const int maxAge = 100;
 
   bool get isAdmin => role == UserRole.admin;
+
+  /// Whether this account can be got back into if the password is forgotten.
+  bool get isRecoverable =>
+      recoveryEmailVerified && recoveryEmail.trim().isNotEmpty;
 
   String get displayName {
     final combined = '$firstName $lastName'.trim();
@@ -120,6 +134,8 @@ class AppUserRecord {
       disabled: data['disabled'] == true,
       isAnonymous: data['isAnonymous'] == true,
       profileComplete: data['profile_complete'] == true,
+      recoveryEmail: (data['recoveryEmail'] ?? '').toString(),
+      recoveryEmailVerified: data['recoveryEmailVerified'] == true,
       highscore: _asInt(data['highscore']) ?? 0,
       cheatAttempts: _asInt(data['cheat_attempts_count']) ?? 0,
       lastGame: data['last_game']?.toString(),

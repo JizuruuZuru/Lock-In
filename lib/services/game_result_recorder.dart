@@ -120,25 +120,42 @@ Future<void> saveBeforeLeaving(
 /// Every screen had a bare `if (_isSavingScore) return;` guard, which quietly
 /// turned into a data-loss path: a heart loss fires an unawaited save, and if
 /// the player hits back immediately the awaited save on the way out returned
-/// instantly *without saving*. Callers now join the in-flight save instead of
-/// dropping theirs.
+/// instantly *without saving*. Callers are now queued behind the running save
+/// rather than dropped - or, as an earlier version of this class did, handed
+/// the running save's future, which waits without ever saving their data.
 class GameSaveGate {
   Future<void>? _inFlight;
 
   /// Whether a save is in flight, for a button that should show a spinner.
   bool get isSaving => _inFlight != null;
 
-  /// Runs [save] unless one is already running, in which case this waits for
-  /// that one rather than skipping.
+  /// Runs [save], queued behind any save already in flight.
+  ///
+  /// Returning the in-flight future instead - which is what this did - is not
+  /// the same as saving: the newer call's `save` was never invoked, so its
+  /// score was dropped exactly as the bare `if (_isSaving) return;` guard used
+  /// to drop it, just with a longer wait first. Offline that window is tens of
+  /// seconds, which is long enough for a player to climb from 3 to 50 and have
+  /// only the 3 recorded.
+  ///
+  /// Chaining keeps the writes ordered - they touch the same document - while
+  /// making sure every caller's data actually reaches Firestore.
   Future<void> run(Future<void> Function() save) {
     final running = _inFlight;
-    if (running != null) return running;
 
-    final future = save().catchError((Object error) {
-      debugPrint('saveGameResult failed: $error');
-    }).whenComplete(() => _inFlight = null);
+    Future<void> next() => save().catchError((Object error) {
+          debugPrint('saveGameResult failed: $error');
+        });
+
+    final future = running == null ? next() : running.then((_) => next());
+
+    final tracked = future.whenComplete(() {
+      // Only the newest save clears the slot; an older one completing must not
+      // hand the next caller an empty queue while this is still running.
+      if (identical(_inFlight, future)) _inFlight = null;
+    });
 
     _inFlight = future;
-    return future;
+    return tracked;
   }
 }

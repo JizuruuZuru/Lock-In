@@ -515,6 +515,20 @@ class _AccountCard extends StatelessWidget {
                   color: AdminPalette.muted,
                   icon: Icons.help_outline_rounded,
                 ),
+              // Whether this child can get back in on their own. Without a
+              // confirmed address the only way past a forgotten password is a
+              // teacher setting a new one from the account editor, so it is
+              // worth being able to see at a glance.
+              if (!record.isAnonymous)
+                AdminChip(
+                  label: record.isRecoverable ? 'Email confirmed' : 'No email',
+                  color: record.isRecoverable
+                      ? AdminPalette.success
+                      : AdminPalette.warning,
+                  icon: record.isRecoverable
+                      ? Icons.mark_email_read_rounded
+                      : Icons.mail_outline_rounded,
+                ),
               if (record.disabled)
                 const AdminChip(
                   label: 'Deactivated',

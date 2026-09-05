@@ -93,10 +93,15 @@ class _TriviaImportPageState extends State<TriviaImportPage> {
       if (!mounted) return;
       setState(() {
         _categories = categories;
-        _selectedCategory = categories.firstWhere(
-          (category) => suggested.contains(category.id),
-          orElse: () => categories.first,
-        );
+        // `categories.first` throws on an empty list, and opentdb does
+        // return an empty set under load - which surfaced as a raw Dart
+        // StateError under "The request did not work".
+        _selectedCategory = categories.isEmpty
+            ? null
+            : categories.firstWhere(
+                (category) => suggested.contains(category.id),
+                orElse: () => categories.first,
+              );
         _phase = _ImportPhase.idle;
       });
     } catch (error) {

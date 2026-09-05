@@ -28,6 +28,7 @@ import '../math/measurements_game.dart';
 import '../exams/exam_game.dart';
 import '../admin/admin_dashboard_page.dart';
 import '../auth/register_page.dart';
+import '../auth/connect_email_page.dart';
 import '../auth/login_page.dart';
 import '../profile/leaderboard_screen.dart';
 import '../science/earth_and_space_game.dart';
@@ -44,9 +45,11 @@ import '../../services/custom_question_sync.dart';
 import '../../services/game_result_recorder.dart';
 import '../../services/player_proctoring_preference.dart';
 import '../../services/proctoring_settings.dart';
+import '../../services/email_link_service.dart';
 import '../../services/google_link_service.dart';
 import '../../services/leaderboard_service.dart';
 import '../../services/sound_service.dart';
+import '../../utils/name_credential.dart';
 import '../../services/text_to_speech_service.dart';
 import '../../services/tts_voice.dart';
 import '../../utils/responsive_layout.dart';
@@ -157,6 +160,11 @@ class _HomeMenuState extends State<HomeMenu> {
   /// tapped twice.
   bool _isLinkingGoogle = false;
 
+  /// One ask per session. `HomeMenu` is only reached through `AppGate`, which
+  /// runs on every launch and after every sign-in, so this is "every login"
+  /// without becoming "every rebuild".
+  bool _emailPromptShown = false;
+
   @override
   void initState() {
     super.initState();
@@ -173,6 +181,36 @@ class _HomeMenuState extends State<HomeMenu> {
       fetchUserData();
     });
     _checkOfflineOnOpen();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_maybeAskForEmail());
+    });
+  }
+
+  /// Asks for a recovery email once per session, on the way into the games.
+  ///
+  /// An account whose only address is the made-up `@lockinplayers.app` name
+  /// credential cannot be recovered: forget the password and the scores are
+  /// gone, with nothing a child or a teacher can do. So the ask is repeated
+  /// each time they sign in - but it is always skippable, because a child with
+  /// no address of their own, or no way to reach an inbox at school, must
+  /// never be locked out of the games over it.
+  Future<void> _maybeAskForEmail() async {
+    if (_emailPromptShown || !mounted) return;
+    _emailPromptShown = true;
+
+    if (_auth.currentUser == null) return;
+    if (EmailLinkService().hasVerifiedEmail) return;
+    // A connected Google account is already a real, reachable address and a
+    // second way back in, so there is nothing left to ask about.
+    if (GoogleLinkService().isCurrentUserLinked) return;
+
+    await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const ConnectEmailPage(isReminder: true),
+      ),
+    );
+    if (mounted) setState(() {});
   }
 
   @override
@@ -2431,6 +2469,66 @@ class _HomeMenuState extends State<HomeMenu> {
     );
   }
 
+  /// Either an "Add your email" button or, once confirmed, a quiet status
+  /// line naming the address. The "later" half of the sign-up offer, and the
+  /// only route in for a player who has skipped the prompt every time.
+  Widget _buildEmailLinkButton() {
+    final service = EmailLinkService();
+    final verified = service.verifiedEmail;
+
+    if (verified != null) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: const Color(0xFFE8F7EA),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFF4CAF50), width: 2),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.mark_email_read_rounded,
+                size: 20, color: Color(0xFF2E7D32)),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Email confirmed\n$verified',
+                style: const TextStyle(
+                  fontSize: 13,
+                  height: 1.35,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF2E7D32),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return SizedBox(
+      width: double.infinity,
+      child: ElevatedButton.icon(
+        onPressed: () async {
+          SoundService().playButtonSoundNow();
+          await Navigator.push<bool>(
+            context,
+            MaterialPageRoute(
+              builder: (_) => const ConnectEmailPage(isReminder: true),
+            ),
+          );
+          if (mounted) setState(() {});
+        },
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.white,
+          foregroundColor: const Color(0xFF2F5233),
+        ),
+        icon: const Icon(Icons.alternate_email_rounded, size: 20),
+        label: const Text('Add your email'),
+      ),
+    );
+  }
+
   /// Either a "Connect Google account" button or, once connected, a quiet
   /// status line naming the linked address.
   Widget _buildGoogleLinkButton() {
@@ -2633,7 +2731,20 @@ class _HomeMenuState extends State<HomeMenu> {
 
   Widget _buildSettings() {
     final displayName = userData?['username'] ?? 'Guest User';
-    final email = user?.email ?? 'Not logged in';
+    // The account's address is a made-up name credential until the player
+    // confirms a real one, and printing `ana.cruz@lockinplayers.app` at a
+    // child only invites them to try mailing it. Show the login id they
+    // actually type instead, and switch to the real address once there is one.
+    final authEmail = user?.email;
+    final loginId = (userData?['loginId'] ?? '').toString().trim();
+    final String email;
+    if (authEmail != null && !isNameCredential(authEmail)) {
+      email = authEmail;
+    } else if (loginId.isNotEmpty) {
+      email = 'Login: $loginId';
+    } else {
+      email = 'Signed in';
+    }
 
     return SafeArea(
       child: Center(
@@ -2758,6 +2869,8 @@ class _HomeMenuState extends State<HomeMenu> {
                         // The "later" half of the sign-up offer: a player who
                         // skipped connecting Google can do it from here. Once
                         // connected the button turns into a status line.
+                        const SizedBox(height: 12),
+                        _buildEmailLinkButton(),
                         if (GoogleLinkService.isSupportedPlatform) ...[
                           const SizedBox(height: 12),
                           _buildGoogleLinkButton(),
@@ -3126,14 +3239,25 @@ class _ReadingVoiceSectionState extends State<_ReadingVoiceSection> {
 
   Future<void> _load({bool recheck = false}) async {
     setState(() => _busy = true);
-    final report = recheck
-        ? await TextToSpeechService().refreshVoice()
-        : await TextToSpeechService().ensureReady();
-    if (!mounted) return;
-    setState(() {
-      _report = report;
-      _busy = false;
-    });
+
+    // `_busy` disables both buttons on this card, so it has to be cleared on
+    // every path. The service no longer throws, but a `finally` is what makes
+    // that a guarantee rather than an assumption about somebody else's code.
+    VoiceReport? report;
+    try {
+      report = recheck
+          ? await TextToSpeechService().refreshVoice()
+          : await TextToSpeechService().ensureReady();
+    } catch (error) {
+      debugPrint('Could not read the voice report: $error');
+    } finally {
+      if (mounted) {
+        setState(() {
+          if (report != null) _report = report;
+          _busy = false;
+        });
+      }
+    }
   }
 
   @override

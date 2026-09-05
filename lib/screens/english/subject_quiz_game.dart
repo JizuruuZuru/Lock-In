@@ -62,6 +62,15 @@ class _SubjectQuizGameState extends State<SubjectQuizGame> {
   bool showCorrectSplash = false;
   bool showIncorrectSplash = false;
   bool _showExitConfirmation = false;
+
+  /// Set the moment the player commits to leaving, and never cleared.
+  ///
+  /// Every exit path below `await`s a save before it pops, and
+  /// `saveBeforeLeaving` deliberately waits up to three seconds. The Leave
+  /// button stayed live for that whole window, so each extra tap queued
+  /// another `Navigator.pop` - a few quick taps emptied the navigator and left
+  /// a black screen.
+  bool _isLeavingScreen = false;
   final GameSaveGate _saveGate = GameSaveGate();
 
   /// Whether the camera is actually watching this run.
@@ -302,6 +311,8 @@ class _SubjectQuizGameState extends State<SubjectQuizGame> {
   void _cancelExitConfirmation() {
     SoundService().playButtonSoundNow();
     setState(() {
+      // Leaving was abandoned; the Leave button must work again.
+      _isLeavingScreen = false;
       _showExitConfirmation = false;
       isGameOver = false;
       timerKey = UniqueKey();
@@ -309,6 +320,8 @@ class _SubjectQuizGameState extends State<SubjectQuizGame> {
   }
 
   Future<void> _confirmExitFromBack() async {
+    if (_isLeavingScreen) return;
+    setState(() => _isLeavingScreen = true);
     SoundService().playButtonSoundNow();
 
     // Both writes are issued here, so each reaches Firestore's local
@@ -335,7 +348,17 @@ class _SubjectQuizGameState extends State<SubjectQuizGame> {
     });
 
     if (!mounted) return;
-    Navigator.pop(context);
+    // Guarded as a backstop: popping the last route is what turns the screen
+    // black, and the flag above should already have made this unreachable.
+    final navigator = Navigator.of(context);
+    if (navigator.canPop()) {
+      navigator.pop();
+      return;
+    }
+
+    // Nothing to pop, so this screen is the root route. Release the claim
+    // rather than leaving it permanently unleavable.
+    if (mounted) setState(() => _isLeavingScreen = false);
   }
 
   Future<void> saveScore() async {
@@ -357,13 +380,31 @@ class _SubjectQuizGameState extends State<SubjectQuizGame> {
       return;
     }
 
+    // Claimed only once leaving is genuinely under way. Setting it before
+    // the branch above put the confirmation dialog on screen with
+    // `isBusy: true`, which disables *both* its buttons - and this handler
+    // then returned at the guard, so the arrow and the Android gesture were
+    // dead too. The only way out was to force-quit the app.
+    if (_isLeavingScreen) return;
+    setState(() => _isLeavingScreen = true);
+
     SoundService().playButtonSoundNow();
     if (hasStarted && score > 0) {
       // Bounded: offline this never returned, so the back arrow did nothing.
       await saveBeforeLeaving(saveScore);
     }
     if (!mounted) return;
-    Navigator.pop(context);
+    // Guarded as a backstop: popping the last route is what turns the screen
+    // black, and the flag above should already have made this unreachable.
+    final navigator = Navigator.of(context);
+    if (navigator.canPop()) {
+      navigator.pop();
+      return;
+    }
+
+    // Nothing to pop, so this screen is the root route. Release the claim
+    // rather than leaving it permanently unleavable.
+    if (mounted) setState(() => _isLeavingScreen = false);
   }
 
   @override
@@ -457,6 +498,8 @@ class _SubjectQuizGameState extends State<SubjectQuizGame> {
                         'Your current progress in this quiz will be saved before leaving.',
                     onOk: _confirmExitFromBack,
                     onBack: _cancelExitConfirmation,
+                    isBusy: _isLeavingScreen,
+                    busyText: 'Leaving...',
                     okText: 'Leave',
                     backText: 'Stay',
                   ),

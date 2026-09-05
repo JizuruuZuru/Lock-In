@@ -33,22 +33,60 @@ class TextToSpeechService {
   ///
   /// Called after sending someone to system settings to install better voice
   /// data: the new voice only appears once the engine is asked again.
+  /// Re-runs configuration from scratch. Never throws, for the same reason
+  /// [ensureReady] does not - this is the button a teacher presses precisely
+  /// *because* something is wrong.
   Future<VoiceReport> refreshVoice() async {
     _configured = false;
-    await _ensureConfigured();
+    try {
+      await _ensureConfigured();
+    } catch (error) {
+      debugPrint('Could not reconfigure speech: $error');
+    }
     return _report;
   }
 
   /// Selects the best available voice without speaking, so the settings screen
   /// can show what is in use before anything has been said.
+  /// Always produces a report, even when the platform will not cooperate.
+  ///
+  /// This used to let a configuration failure escape - and on Android that is
+  /// routine, since the TTS engine is often not bound yet at cold start, and a
+  /// device with no engine at all throws outright. The caller in the profile
+  /// screen sets a `_busy` flag before awaiting this and clears it after, so a
+  /// throw left "Reading voice" stuck on "Checking..." with both **Hear it**
+  /// and **Check again** permanently disabled, and no way to retry. A report
+  /// method that cannot report is worse than one that reports bad news.
   Future<VoiceReport> ensureReady() async {
-    await _ensureConfigured();
+    try {
+      await _ensureConfigured();
+    } catch (error) {
+      debugPrint('Could not configure speech: $error');
+    }
     return _report;
   }
 
-  Future<void> _ensureConfigured() async {
-    if (_configured) return;
-    _configured = true;
+  /// Serialised, and only marked done once it has actually finished.
+  ///
+  /// `_configured = true` used to be set *before* the awaits below, so a single
+  /// throw - an Android engine not yet bound at cold start is the usual one -
+  /// left it true with nothing applied, and every later call short-circuited.
+  /// The rate, pitch, engine and voice were then never set again for the whole
+  /// process: the spelling game read at the default speed in the default
+  /// voice. A second caller arriving mid-configuration also sailed past and
+  /// spoke before `awaitSpeakCompletion(true)` had landed.
+  Future<void>? _configuring;
+
+  Future<void> _ensureConfigured() {
+    if (_configured) return Future<void>.value();
+    return _configuring ??= _configure().then((_) {
+      _configured = true;
+    }).whenComplete(() {
+      _configuring = null;
+    });
+  }
+
+  Future<void> _configure() async {
     await _tts.setLanguage('en-US');
     // A touch slower than natural speech keeps words easy for young
     // learners to follow, while pitch/volume stay close to natural so it

@@ -7,13 +7,23 @@ import '../../app_gate.dart';
 import '../../services/sound_service.dart';
 import '../../utils/game_theme.dart';
 import '../../utils/auth_theme.dart';
+import '../../services/app_settings_service.dart';
+import '../../services/email_link_service.dart';
+import '../../services/game_result_recorder.dart';
 import '../../utils/auth_error_message.dart';
 import '../../utils/name_credential.dart';
 import '../../widgets/animated_shape_background.dart';
 import '../../widgets/error_dialog.dart';
 
 class LoginPage extends StatefulWidget {
-  const LoginPage({super.key});
+  /// Prefills the email box and opens the screen in email mode.
+  ///
+  /// Used when an address was confirmed but the session could not be rebuilt
+  /// in place - the child arrives here already knowing which address to use,
+  /// rather than being asked to remember what just changed.
+  final String? initialEmail;
+
+  const LoginPage({super.key, this.initialEmail});
 
   @override
   State<LoginPage> createState() => _LoginPageState();
@@ -26,47 +36,44 @@ class _LoginPageState extends State<LoginPage> {
   static const Color _panelColor = Color(0xFFF0F8FF);
   static const Color _accentColor = Color(0xFF0097A7);
 
-  final _firstNameController = TextEditingController();
-  final _lastNameController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _emailController = TextEditingController();
   final _auth = FirebaseAuth.instance;
+  final EmailLinkService _emailService = EmailLinkService();
   bool _loading = false;
+
 
   @override
   void initState() {
     super.initState();
     SoundService().playPageBgm(BgmPage.login);
     SoundService().registerUserInteraction();
-    _prefillNameFromCurrentProfile();
+    final handedOver = widget.initialEmail?.trim();
+    if (handedOver != null && handedOver.isNotEmpty) {
+      _emailController.text = handedOver;
+    } else {
+      _restoreLastEmail();
+    }
   }
 
   @override
   void dispose() {
-    _firstNameController.dispose();
-    _lastNameController.dispose();
     _passwordController.dispose();
+    _emailController.dispose();
     super.dispose();
   }
 
-  Future<void> _prefillNameFromCurrentProfile() async {
-    final currentUser = _auth.currentUser;
-    if (currentUser == null) return;
+  /// Fills in the address this device last signed in with, so a returning
+  /// player only has to type their password.
+  Future<void> _restoreLastEmail() async {
+    final remembered = await AppSettingsService().lastEmailSignIn();
+    if (remembered == null || !mounted) return;
+    if (_emailController.text.trim().isNotEmpty) return;
 
-    final snapshot = await FirebaseFirestore.instance
-        .collection('users')
-        .doc(currentUser.uid)
-        .get();
-    final data = snapshot.data();
-    if (data == null || !mounted) return;
-
-    _firstNameController.text = (data['firstName'] ?? '').toString();
-    _lastNameController.text = (data['lastName'] ?? '').toString();
+    setState(() => _emailController.text = remembered);
   }
 
-  String get _loginEmail => buildNameCredentialEmail(
-        firstName: _firstNameController.text,
-        lastName: _lastNameController.text,
-      );
+
 
   Future<void> _showErrorDialog(String message) async {
     if (!mounted) return;
@@ -80,20 +87,53 @@ class _LoginPageState extends State<LoginPage> {
     );
   }
 
-  Future<void> login() async {
-    final firstName = _firstNameController.text.trim();
-    final lastName = _lastNameController.text.trim();
-    final password = normalizePassword(_passwordController.text);
+  /// Only works for an account that has confirmed a real address - which is
+  /// exactly what [ConnectEmailPage] exists to arrange. Until then there is
+  /// nothing to send to, and the copy says so rather than pretending.
+  Future<void> _forgotPassword() async {
+    SoundService().playButtonSoundNow();
 
-    if (firstName.isEmpty || lastName.isEmpty || password.isEmpty) {
-      await _showErrorDialog('Enter your first name, last name, and password.');
+    final typed = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => _ForgotPasswordDialog(
+        initialEmail: _emailController.text.trim(),
+        ink: _inkColor,
+        panel: _panelColor,
+        accent: _accentColor,
+      ),
+    );
+    if (typed == null || !mounted) return;
+
+    setState(() => _loading = true);
+    final result = await _emailService.sendPasswordReset(typed);
+    if (!mounted) return;
+    setState(() => _loading = false);
+
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(result.message),
+          backgroundColor: result.isSuccess
+              ? const Color(0xFF2E7D32)
+              : const Color(0xFF8A6100),
+        ),
+      );
+  }
+
+  Future<void> login() async {
+    final password = normalizePassword(_passwordController.text);
+    final typedEmail = _emailController.text.trim();
+
+    if (typedEmail.isEmpty || password.isEmpty) {
+      await _showErrorDialog('Enter your email address and password.');
       return;
     }
 
     setState(() => _loading = true);
     try {
       final credential = await _auth.signInWithEmailAndPassword(
-        email: _loginEmail,
+        email: typedEmail,
         password: password,
       );
 
@@ -119,41 +159,53 @@ class _LoginPageState extends State<LoginPage> {
         // from the login box silently reverted the admin's edit on the very
         // next sign-in. Only session bookkeeping is written here; names are
         // owned by the account editor and by registration.
+        final signedInEmail = user.email ?? typedEmail;
+
         final sessionFields = <String, dynamic>{
           'uid': user.uid,
-          'loginEmail': _loginEmail,
-          'email': _loginEmail,
+          'loginEmail': signedInEmail,
+          'email': signedInEmail,
           'isAnonymous': false,
           'authProvider': 'email',
           'lastLoginAt': FieldValue.serverTimestamp(),
           'updatedAt': FieldValue.serverTimestamp(),
         };
 
-        if (!existing.exists) {
-          // No profile yet - this is the one case where the typed name is the
-          // only name there is, so seed it.
-          final typedFullName = '$firstName $lastName'.trim();
-          sessionFields.addAll({
-            'firstName': firstName,
-            'lastName': lastName,
-            'fullName': typedFullName,
-            'username': typedFullName,
-            'loginId':
-                buildNameLoginId(firstName: firstName, lastName: lastName),
-          });
+        // Backstop for the recovery record. Confirming an address revokes the
+        // session mid-flow, so the write that normally records it can be lost
+        // - but signing in with that address is itself proof it landed.
+        if (user.emailVerified && !isNameCredential(user.email)) {
+          sessionFields['recoveryEmail'] = signedInEmail;
+          sessionFields['recoveryEmailVerified'] = true;
+          sessionFields['recoveryEmailPending'] = FieldValue.delete();
         }
 
-        await userRef.set(sessionFields, SetOptions(merge: true));
+        // Deliberately no name seeding. This screen no longer asks for one,
+        // and a profile that does not exist yet is a case for onboarding -
+        // `AppGate` routes there - not for inventing a name here.
 
-        // Keep the Firebase display name in step with the stored profile
-        // rather than with what was typed into the login box.
+        // Bounded. Offline this never returns, so the `finally` below
+        // never ran and the Login button spun forever - while the
+        // child was, in fact, already signed in.
+        await saveBeforeLeaving(
+          () => userRef.set(sessionFields, SetOptions(merge: true)),
+        );
+
+        // Keep the Firebase display name in step with the stored profile.
+        // Cosmetic bookkeeping. It used to be able to fail an otherwise
+        // successful sign-in with "Something went wrong".
         final storedFullName =
             (existing.data()?['fullName'] as String?)?.trim();
-        final displayName = (storedFullName != null && storedFullName.isNotEmpty)
-            ? storedFullName
-            : '$firstName $lastName'.trim();
-        await user.updateDisplayName(displayName);
+        if (storedFullName != null && storedFullName.isNotEmpty) {
+          await saveBeforeLeaving(
+            () => user.updateDisplayName(storedFullName),
+          );
+        }
       }
+
+      // Only ever written after a sign-in that actually succeeded, so the
+      // next visit just needs a password.
+      AppSettingsService().saveLastEmailSignIn(typedEmail);
 
       if (!mounted) return;
       // Route through the gate rather than jumping straight to HomeMenu, so an
@@ -165,6 +217,7 @@ class _LoginPageState extends State<LoginPage> {
       );
     } on FirebaseAuthException catch (e) {
       if (!mounted) return;
+
       await _showErrorDialog(
         authErrorMessage(e, fallback: 'Could not sign you in. Please try again.'),
       );
@@ -271,7 +324,7 @@ class _LoginPageState extends State<LoginPage> {
                         ),
                         const SizedBox(height: 8),
                         const Text(
-                          'Login using your first name, last name, and password. '
+                          'Sign in with your email address and password. '
                           'Teachers and admins sign in here too.',
                           style: TextStyle(
                             fontSize: 14,
@@ -280,32 +333,17 @@ class _LoginPageState extends State<LoginPage> {
                           ),
                         ),
                         const SizedBox(height: 24),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: TextField(
-                                controller: _firstNameController,
-                                textInputAction: TextInputAction.next,
-                                textCapitalization: TextCapitalization.words,
-                                decoration: const InputDecoration(
-                                  labelText: 'First Name',
-                                  prefixIcon: Icon(Icons.person),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: TextField(
-                                controller: _lastNameController,
-                                textInputAction: TextInputAction.next,
-                                textCapitalization: TextCapitalization.words,
-                                decoration: const InputDecoration(
-                                  labelText: 'Last Name',
-                                  prefixIcon: Icon(Icons.badge),
-                                ),
-                              ),
-                            ),
-                          ],
+                        TextField(
+                          controller: _emailController,
+                          keyboardType: TextInputType.emailAddress,
+                          autocorrect: false,
+                          autofillHints: const [AutofillHints.email],
+                          textInputAction: TextInputAction.next,
+                          decoration: const InputDecoration(
+                            labelText: 'Email address',
+                            hintText: 'name@example.com',
+                            prefixIcon: Icon(Icons.mail_outline_rounded),
+                          ),
                         ),
                         const SizedBox(height: 16),
                         TextField(
@@ -317,7 +355,21 @@ class _LoginPageState extends State<LoginPage> {
                           obscureText: true,
                           onSubmitted: (_) => login(),
                         ),
-                        const SizedBox(height: 24),
+                        const SizedBox(height: 4),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: TextButton(
+                            onPressed: _loading ? null : _forgotPassword,
+                            child: const Text(
+                              'Forgot your password?',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w700,
+                                color: _inkColor,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
                         SizedBox(
                           width: double.infinity,
                           child: ElevatedButton(
@@ -382,6 +434,95 @@ class _LoginPageState extends State<LoginPage> {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Asks which address to send the reset link to.
+///
+/// Deliberately a plain address box rather than the name fields: a reset can
+/// only go to an address Firebase can actually reach, which means one the
+/// player confirmed through [ConnectEmailPage]. The made-up name credential
+/// has no inbox behind it.
+class _ForgotPasswordDialog extends StatefulWidget {
+  final String initialEmail;
+  final Color ink;
+  final Color panel;
+  final Color accent;
+
+  const _ForgotPasswordDialog({
+    required this.initialEmail,
+    required this.ink,
+    required this.panel,
+    required this.accent,
+  });
+
+  @override
+  State<_ForgotPasswordDialog> createState() => _ForgotPasswordDialogState();
+}
+
+class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
+  late final TextEditingController _controller =
+      TextEditingController(text: widget.initialEmail);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: widget.panel,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: BorderSide(color: widget.ink, width: 2.2),
+      ),
+      title: Text(
+        'Reset your password',
+        style: TextStyle(fontWeight: FontWeight.w900, color: widget.ink),
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'We can send a reset link to the email address on your account.',
+            style: TextStyle(fontWeight: FontWeight.w600, height: 1.35),
+          ),
+          const SizedBox(height: 14),
+          TextField(
+            controller: _controller,
+            keyboardType: TextInputType.emailAddress,
+            autocorrect: false,
+            autofocus: true,
+            decoration: const InputDecoration(
+              labelText: 'Email address',
+              hintText: 'name@example.com',
+              prefixIcon: Icon(Icons.mail_outline_rounded),
+            ),
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            'No email on your account yet? Ask your teacher - they can set a '
+            'new password for you from the admin panel.',
+            style: TextStyle(fontSize: 12, height: 1.35),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton(
+          onPressed: () =>
+              Navigator.of(context).pop(_controller.text.trim()),
+          style: ElevatedButton.styleFrom(backgroundColor: widget.accent),
+          child: const Text('Send link'),
+        ),
+      ],
     );
   }
 }

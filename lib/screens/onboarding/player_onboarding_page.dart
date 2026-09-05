@@ -2,6 +2,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../../services/game_result_recorder.dart';
+
 import '../../models/app_user_record.dart';
 import '../../widgets/decorative_gif.dart';
 
@@ -87,8 +89,12 @@ class _PlayerOnboardingPageState extends State<PlayerOnboardingPage> {
     });
 
     try {
-      await widget.user.updateDisplayName(fullName);
-      await FirebaseFirestore.instance.collection('users').doc(widget.user.uid).set({
+      // Bookkeeping, and a network call: it must not be able to fail
+      // the step or hang it.
+      await saveBeforeLeaving(
+        () => widget.user.updateDisplayName(fullName),
+      );
+      await saveBeforeLeaving(() => FirebaseFirestore.instance.collection('users').doc(widget.user.uid).set({
         'uid': widget.user.uid,
         'firstName': firstName,
         'lastName': lastName,
@@ -101,7 +107,7 @@ class _PlayerOnboardingPageState extends State<PlayerOnboardingPage> {
         'profile_complete': false,
         'updatedAt': FieldValue.serverTimestamp(),
         'createdAt': widget.initialData['createdAt'] ?? FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      }, SetOptions(merge: true)));
 
       if (!mounted) return;
       setState(() {
@@ -138,12 +144,12 @@ class _PlayerOnboardingPageState extends State<PlayerOnboardingPage> {
     });
 
     try {
-      await FirebaseFirestore.instance.collection('users').doc(widget.user.uid).set({
+      await saveBeforeLeaving(() => FirebaseFirestore.instance.collection('users').doc(widget.user.uid).set({
         'age': age,
         'onboarding_step': 'ready',
         'profile_complete': false,
         'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      }, SetOptions(merge: true)));
 
       if (!mounted) return;
       setState(() {
@@ -245,7 +251,7 @@ class _PlayerOnboardingPageState extends State<PlayerOnboardingPage> {
       final fullName = '$firstName $lastName'.trim();
       final age = int.tryParse(_ageController.text.trim());
 
-      await FirebaseFirestore.instance.collection('users').doc(widget.user.uid).set({
+      await saveBeforeLeaving(() => FirebaseFirestore.instance.collection('users').doc(widget.user.uid).set({
         'uid': widget.user.uid,
         'firstName': firstName,
         'lastName': lastName,
@@ -259,7 +265,7 @@ class _PlayerOnboardingPageState extends State<PlayerOnboardingPage> {
         'onboarding_step': 'done',
         'profileCompletedAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      }, SetOptions(merge: true)));
 
       if (!mounted) return;
       widget.onFinished();

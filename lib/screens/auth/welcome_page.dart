@@ -8,6 +8,8 @@ import '../../utils/responsive_layout.dart';
 import '../../widgets/animated_shape_background.dart';
 import '../../widgets/error_dialog.dart';
 import '../onboarding/player_onboarding_page.dart';
+import '../../services/google_link_service.dart';
+import 'connect_email_page.dart';
 import 'connect_google_page.dart';
 import 'login_page.dart';
 import 'register_page.dart';
@@ -132,15 +134,35 @@ class _WelcomePageState extends State<WelcomePage> {
       MaterialPageRoute(builder: (_) => const RegisterScreen()),
     );
 
-    // Only offer the Google step to someone who actually finished creating an
-    // account. Linking needs a real account to link *to*, and a player who
-    // backed out of registration is still anonymous.
+    // Only offer the recovery steps to someone who actually finished creating
+    // an account. Both of them attach to a real account, and a player who
+    // backed out of registration is still anonymous - `AppGate` sends them
+    // straight back to the password screen.
     if (registered == true) {
-      await navigator.push<void>(
+      final addedEmail = await navigator.push<bool>(
         MaterialPageRoute(
-          builder: (_) => ConnectGooglePage(playerName: _firstNameOfCurrentUser()),
+          builder: (_) => ConnectEmailPage(playerName: _firstNameOfCurrentUser()),
         ),
       );
+
+      // Google is a second way to sign in and a second way back into a
+      // forgotten account. Somebody who just confirmed an email address has
+      // both already, so they are not asked twice in a row - and it is not
+      // offered at all where the chooser cannot open, which used to push a
+      // screen whose only content was an "unsupported" banner.
+      // `currentUser` is checked because confirming an email address replaces
+      // the sign-in address and revokes the session; `ConnectEmailPage`
+      // normally rebuilds it, but if that failed there is nothing for Google
+      // to link to and this screen could only show an error.
+      if (addedEmail != true &&
+          FirebaseAuth.instance.currentUser != null &&
+          GoogleLinkService.isSupportedPlatform) {
+        await navigator.push<void>(
+          MaterialPageRoute(
+            builder: (_) => ConnectGooglePage(playerName: _firstNameOfCurrentUser()),
+          ),
+        );
+      }
     }
 
     if (!mounted) return;
@@ -304,7 +326,7 @@ class _WelcomePageState extends State<WelcomePage> {
             width: width,
             icon: Icons.login_rounded,
             title: 'Yes, I have an account',
-            subtitle: 'Log in with your name and password',
+            subtitle: 'Log in with your email and password',
             background: _accentColor,
             foreground: Colors.white,
             onTap: _busy ? null : _goToLogin,

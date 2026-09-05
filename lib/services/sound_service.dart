@@ -79,6 +79,18 @@ class SoundService {
   double _bgmTargetVolume = 0.33;
   bool _bgmFading = false;
   bool _bgmPaused = false; // for web autoplay
+
+  /// Whether the app is currently the thing on screen.
+  ///
+  /// Deliberately separate from [_bgmPaused], which means "the browser will not
+  /// let us start audio yet" - a different condition with a different recovery.
+  /// Nothing in this app was lifecycle-aware at all, so background music and
+  /// every sound effect carried on playing after the player alt-tabbed away.
+  bool _inForeground = true;
+
+  /// Whether the music was playing when the app went away, so the right thing
+  /// happens on the way back: silence stays silent, music resumes.
+  bool _resumeBgmOnReturn = false;
   Timer? _bgmFadeTimer;
   int _bgmFadeVersion = 0;
 
@@ -149,6 +161,37 @@ class SoundService {
     AppSettingsService().saveSfxLevel(_sfxLevel);
   }
 
+  /// Silences everything because the app is no longer on screen.
+  ///
+  /// The BGM player is paused rather than stopped, so returning picks the
+  /// track up where it left off instead of restarting it from the top.
+  Future<void> pauseForBackground() async {
+    if (!_inForeground) return;
+    _inForeground = false;
+    _resumeBgmOnReturn = _bgmIsPlaying;
+
+    try {
+      await _bgmPlayer.pause();
+    } catch (error) {
+      debugPrint('Could not pause the music: $error');
+    }
+  }
+
+  /// Brings the music back, if there was any.
+  Future<void> resumeFromForeground() async {
+    if (_inForeground) return;
+    _inForeground = true;
+    if (!_resumeBgmOnReturn) return;
+    _resumeBgmOnReturn = false;
+
+    try {
+      await _syncBgmVolume();
+      await _bgmPlayer.resume();
+    } catch (error) {
+      debugPrint('Could not resume the music: $error');
+    }
+  }
+
   /// Applies levels restored from disk at start-up, without writing them back.
   Future<void> applyRestoredSettings({
     required bool soundEnabled,
@@ -162,7 +205,9 @@ class SoundService {
   }
 
   Future<void> _syncBgmVolume() async {
-    final effective = _soundEnabled && !_bgmPaused ? (_bgmTargetVolume * _musicLevel) : 0.0;
+    final effective = _soundEnabled && !_bgmPaused && _inForeground
+        ? (_bgmTargetVolume * _musicLevel)
+        : 0.0;
     await _bgmPlayer.setVolume(effective.clamp(0.0, 1.0));
   }
 
@@ -300,6 +345,10 @@ class SoundService {
     required SystemSoundType fallback,
   }) async {
     if (!_soundEnabled) return;
+    // A splash sound queued just before the app was backgrounded would
+    // otherwise still play, out of nowhere, over whatever the player switched
+    // to.
+    if (!_inForeground) return;
 
     final now = DateTime.now();
     final last = _lastPlayedTime[groupKey];

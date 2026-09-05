@@ -21,13 +21,41 @@ String buildNameLoginId({
   return '$first.$last';
 }
 
+/// The made-up domain the name-based credentials live on.
+///
+/// It does not resolve and never receives mail, which is exactly why an
+/// account that has only this address cannot be recovered. [isNameCredential]
+/// is how the rest of the app tells "this child has only their name" from
+/// "this child has given us a real address we can reach them at".
+const String kNameCredentialDomain = 'lockinplayers.app';
+
 String buildNameCredentialEmail({
   required String firstName,
   required String lastName,
 }) {
   final loginId = buildNameLoginId(firstName: firstName, lastName: lastName);
-  return '$loginId@lockinplayers.app';
+  return '$loginId@$kNameCredentialDomain';
 }
+
+/// Whether [email] is one of the synthetic name credentials rather than a real
+/// address somebody can actually receive mail at.
+bool isNameCredential(String? email) {
+  final value = email?.trim().toLowerCase();
+  if (value == null || value.isEmpty) return true;
+  return value.endsWith('@$kNameCredentialDomain');
+}
+
+/// A deliberately permissive check - enough to catch a typo like a missing `@`
+/// or a trailing comma, without trying to out-guess a mail server about what
+/// is deliverable. The verification mail is the real test.
+bool looksLikeRealEmail(String value) {
+  final email = value.trim();
+  if (email.isEmpty || email.length > 254) return false;
+  if (isNameCredential(email)) return false;
+  return _emailShape.hasMatch(email);
+}
+
+final RegExp _emailShape = RegExp(r'^[^@\s,]+@[^@\s,.]+(\.[^@\s,.]+)+$');
 
 final RegExp _nonAlphanumericRun = RegExp(r'[^a-z0-9]+');
 final RegExp _dotRun = RegExp(r'\.+');

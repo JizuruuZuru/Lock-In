@@ -77,6 +77,23 @@ class GoogleLinkService {
   /// `initialize()` is only meaningful once per process.
   static bool _initialized = false;
 
+  /// The project's **web** OAuth client, which is what Android mints the ID
+  /// token against.
+  ///
+  /// Copied verbatim from `android/app/google-services.json` - the
+  /// `"client_type": 3` entry under `oauth_client`. Re-read it from there if
+  /// the Firebase project ever changes; a mismatch fails the same silent way
+  /// an absent one does.
+  ///
+  /// Not a secret: it already ships inside the APK in that very file. What it
+  /// is, is *required*. Calling `initialize()` without it - which is what this
+  /// did - leaves `authenticate()` either returning an account whose `idToken`
+  /// is null, or failing inside Credential Manager, which the plugin reports as
+  /// `canceled`. Both are indistinguishable from the player simply changing
+  /// their mind, which is why this looked like "the chooser cancels itself".
+  static const String _serverClientId =
+      '436363627484-ffiodf6qu23imbi5q4gpl2l99msas8kf.apps.googleusercontent.com';
+
   /// Whether this platform can show Google's interactive chooser.
   ///
   /// v7 only implements `authenticate()` on Android, iOS, and macOS. The web
@@ -93,7 +110,7 @@ class GoogleLinkService {
 
   Future<void> _ensureInitialized() async {
     if (_initialized) return;
-    await GoogleSignIn.instance.initialize();
+    await GoogleSignIn.instance.initialize(serverClientId: _serverClientId);
     _initialized = true;
   }
 
@@ -102,6 +119,15 @@ class GoogleLinkService {
   Future<GoogleLinkResult> linkGoogleAccount() async {
     final user = _auth.currentUser;
     if (user == null) {
+      // Reachable in one non-obvious way: confirming a recovery email replaces
+      // the account's sign-in address, which revokes the session. If the
+      // silent re-sign-in in `EmailLinkService.confirmChange` did not manage
+      // to rebuild it, everything downstream lands here.
+      debugPrint(
+        'linkGoogleAccount called with no signed-in user. If this followed an '
+        'email confirmation, the session was revoked by the address change '
+        'and could not be restored.',
+      );
       return const GoogleLinkResult(
         outcome: GoogleLinkOutcome.failed,
         message: 'You need to be signed in before connecting a Google account.',
@@ -132,6 +158,22 @@ class GoogleLinkService {
       // No ID token means the project has no OAuth client for this app, which
       // is a setup gap rather than something the player did wrong.
       if (idToken == null || idToken.isEmpty) {
+        // The on-screen message stays kid-safe, but "enable it in the console"
+        // sends a developer to a switch that is usually already on. Getting
+        // this far means the chooser opened and Google returned an account -
+        // the token is missing because Android had no web client id to ask
+        // for one with. That comes from `google-services.json`, and it is
+        // empty until a SHA-1 fingerprint is registered and the file is
+        // downloaded again. See docs/GOOGLE_SIGN_IN_SETUP.md.
+        debugPrint(
+          'Google returned an account but no ID token. Check, in order: '
+          '(1) `_serverClientId` here still matches the "client_type": 3 entry '
+          'in android/app/google-services.json; (2) that file has a non-empty '
+          '"oauth_client" - it stays empty until a SHA-1 fingerprint is '
+          'registered and the file re-downloaded; (3) flutter clean, since '
+          'gradle bakes the old copy into generated resources. '
+          'See docs/GOOGLE_SIGN_IN_SETUP.md.',
+        );
         return const GoogleLinkResult(
           outcome: GoogleLinkOutcome.notConfigured,
           message:
@@ -166,6 +208,15 @@ class GoogleLinkService {
   GoogleLinkResult _fromGoogleException(GoogleSignInException error) {
     switch (error.code) {
       case GoogleSignInExceptionCode.canceled:
+        // Usually a real "changed my mind" - but not always. Android's
+        // Credential Manager reports a misconfigured or unusable request the
+        // same way, so a chooser that closes instantly, or never appears at
+        // all, lands here too and looks identical to a deliberate dismissal.
+        debugPrint(
+          'Google sign-in reported canceled: ${error.description}. If the '
+          'chooser never actually appeared, this is configuration rather than '
+          'the player - check `_serverClientId` and the registered SHA-1.',
+        );
         return const GoogleLinkResult(
           outcome: GoogleLinkOutcome.cancelled,
           message: 'No problem - you can connect a Google account later.',
@@ -177,6 +228,13 @@ class GoogleLinkService {
               'Google sign-in cannot open on this device. Try the app on your phone or tablet.',
         );
       case GoogleSignInExceptionCode.clientConfigurationError:
+        // Almost always the SHA-1 fingerprint: Google refuses to hand an
+        // account to an app it cannot recognise the signature of.
+        debugPrint(
+          'Google rejected this app\'s configuration: ${error.description}. '
+          'Check the debug SHA-1 is registered on the Android app in the '
+          'Firebase console. See docs/GOOGLE_SIGN_IN_SETUP.md.',
+        );
         return const GoogleLinkResult(
           outcome: GoogleLinkOutcome.notConfigured,
           message:
